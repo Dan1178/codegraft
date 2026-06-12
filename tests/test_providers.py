@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -14,6 +15,7 @@ from codegraft.models.repo import RepoSummary
 from codegraft.planning.service import generate_plan, get_provider
 from codegraft.providers.anthropic_provider import AnthropicProvider
 from codegraft.providers.base import PlanningRequest, supports_temperature
+from codegraft.providers.openai_provider import OpenAIProvider
 from codegraft.providers.prompt import build_planning_prompt
 from tests.conftest import write
 
@@ -133,6 +135,65 @@ def test_supports_temperature_helper() -> None:
     assert not supports_temperature("claude-fable-5")
 
 
+# --- OpenAI provider (mocked) ---------------------------------------------
+
+def _oa_config(model: str = "gpt-4o") -> Config:
+    config = Config()
+    config.provider.name = "openai"
+    config.provider.model = model
+    config.secrets.openai_api_key = "test-key"
+    return config
+
+
+def _fake_openai_client(parsed, refusal=None):
+    parser = SimpleNamespace(calls=[])
+
+    def parse(**kwargs):
+        parser.calls.append(kwargs)
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(parsed=parsed, refusal=refusal))]
+        )
+
+    parser.parse = parse
+    client = SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=parser)))
+    return client, parser
+
+
+def test_openai_returns_parsed_plan() -> None:
+    client, parser = _fake_openai_client(_sample_plan())
+    plan = OpenAIProvider(_oa_config(), client=client).generate_plan(_request())
+
+    assert isinstance(plan, ImplementationPlan)
+    call = parser.calls[0]
+    assert call["response_format"] is ImplementationPlan
+    assert call["model"] == "gpt-4o"
+    roles = [m["role"] for m in call["messages"]]
+    assert roles == ["system", "user"]
+
+
+def test_openai_missing_key_raises() -> None:
+    config = _oa_config()
+    config.secrets.openai_api_key = None
+    with pytest.raises(ProviderError, match="OPENAI_API_KEY"):
+        OpenAIProvider(config).generate_plan(_request())
+
+
+def test_openai_unparsable_raises() -> None:
+    client, _ = _fake_openai_client(parsed=None, refusal="cannot comply")
+    with pytest.raises(PlanValidationError, match="refusal"):
+        OpenAIProvider(_oa_config(), client=client).generate_plan(_request())
+
+
+def test_openai_sdk_error_wrapped() -> None:
+    def parse(**kwargs):
+        raise RuntimeError("rate limited")
+
+    parser = SimpleNamespace(parse=parse)
+    client = SimpleNamespace(beta=SimpleNamespace(chat=SimpleNamespace(completions=parser)))
+    with pytest.raises(ProviderError, match="rate limited"):
+        OpenAIProvider(_oa_config(), client=client).generate_plan(_request())
+
+
 # --- Service orchestration -------------------------------------------------
 
 class _FakeProvider:
@@ -164,11 +225,10 @@ def test_generate_plan_stamps_metadata(tmp_path: Path) -> None:
     assert fake.seen.summary.primary_language == "Python"
 
 
-def test_get_provider_openai_not_implemented() -> None:
+def test_get_provider_openai_returns_provider() -> None:
     config = Config()
     config.provider.name = "openai"
-    with pytest.raises(ProviderError, match="openai"):
-        get_provider(config)
+    assert isinstance(get_provider(config), OpenAIProvider)
 
 
 def test_get_provider_unknown() -> None:

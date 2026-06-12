@@ -43,10 +43,9 @@ def get_provider(config: Config) -> PlanProvider:
 
         return AnthropicProvider(config)
     if name == "openai":
-        raise ProviderError(
-            "the openai provider is not implemented yet (planned for a later phase); "
-            "use --provider anthropic"
-        )
+        from codegraft.providers.openai_provider import OpenAIProvider
+
+        return OpenAIProvider(config)
     raise ProviderError(f"unknown provider: {config.provider.name!r}")
 
 
