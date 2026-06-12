@@ -73,6 +73,7 @@ def generate_plan(
     plan = provider.generate_plan(planning_request)
 
     # Stamp provenance ourselves — the model must not author this.
+    tokens = analysis.token_estimate()
     plan.metadata = GenerationMetadata(
         provider=config.provider.name,
         model=config.provider.model,
@@ -80,6 +81,8 @@ def generate_plan(
         timestamp=datetime.now().isoformat(timespec="seconds"),
         ranked_file_count=len(analysis.ranked),
         reviewed_file_count=len(analysis.snippets),
+        context_tokens=tokens.bundle_tokens,
+        tokens_saved=tokens.saved_tokens,
     )
     return plan
 

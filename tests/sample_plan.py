@@ -173,5 +173,7 @@ def sample_plan() -> ImplementationPlan:
             timestamp="2026-06-11T12:00:00",
             ranked_file_count=12,
             reviewed_file_count=3,
+            context_tokens=2000,
+            tokens_saved=8000,
         ),
     )

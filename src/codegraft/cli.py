@@ -200,6 +200,8 @@ def inspect(
         f"{analysis.context_chars} chars "
         f"(budget {config.analysis.context_char_budget})"
     )
+    est = analysis.token_estimate()
+    console.print(f"[dim]Est. tokens (rough):[/dim] {est.summary()}")
 
     if snippets:
         for s in analysis.snippets:

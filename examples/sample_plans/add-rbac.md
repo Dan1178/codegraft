@@ -126,3 +126,5 @@ In app/services/auth.py add `require_role(role: str)` that returns a FastAPI dep
 - Timestamp: 2026-06-11T12:00:00
 - Ranked file count: 12
 - Reviewed file count: 3
+- Estimated context tokens: 2,000
+- Estimated tokens saved: 8,000 (vs sending all candidate files)

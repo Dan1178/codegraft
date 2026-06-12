@@ -146,6 +146,8 @@ def render_markdown(plan: ImplementationPlan) -> str:
         f"- Timestamp: {m.timestamp or '—'}",
         f"- Ranked file count: {m.ranked_file_count}",
         f"- Reviewed file count: {m.reviewed_file_count}",
+        f"- Estimated context tokens: {m.context_tokens:,}",
+        f"- Estimated tokens saved: {m.tokens_saved:,} (vs sending all candidate files)",
     ]
     parts.append(_section("Generation Metadata", "\n".join(meta_lines)))
 

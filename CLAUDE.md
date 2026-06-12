@@ -70,6 +70,8 @@ repo path + request
 5. ✅ **Markdown rendering & request handling** — table-cell escaping, snapshot
    test vs checked-in `examples/sample_plans/add-rbac.md`, title/body ranking-
    signal split for long requests, `inspect --request-file`, 62 tests. **Done.**
+   - ✅ Mini-feature: estimated **token savings** (`utils/tokens.py`,
+     `RepoAnalysis.token_estimate()`) — shown in `inspect` and plan metadata.
 6. ⬜ **OpenAI provider** + portfolio polish (README, demo, screenshots, `--json`,
    debug artifacts) — *next.*
 

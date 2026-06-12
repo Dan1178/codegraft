@@ -18,6 +18,7 @@ from codegraft.repo.rank import rank_files
 from codegraft.repo.snippets import extract_snippets
 from codegraft.repo.summarize import summarize
 from codegraft.utils.text import ranking_signal
+from codegraft.utils.tokens import TokenEstimate, estimate_savings
 
 
 @dataclass
@@ -34,6 +35,16 @@ class RepoAnalysis:
     @property
     def context_chars(self) -> int:
         return sum(s.char_count for s in self.snippets)
+
+    def token_estimate(self) -> TokenEstimate:
+        """Estimate tokens sent vs. sending every candidate file in full."""
+
+        baseline_chars = sum(f.size_bytes for f in self.scan.files)
+        return estimate_savings(
+            baseline_chars=baseline_chars,
+            bundle_chars=self.context_chars,
+            candidate_files=self.scan.file_count,
+        )
 
 
 def analyze_repo(

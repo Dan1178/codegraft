@@ -131,6 +131,17 @@ class GenerationMetadata(BaseModel):
     reviewed_file_count: int = Field(
         default=0, description="How many files were included in the evidence bundle."
     )
+    context_tokens: int = Field(
+        default=0,
+        description="Estimated tokens in the context bundle. Filled by codegraft.",
+    )
+    tokens_saved: int = Field(
+        default=0,
+        description=(
+            "Estimated tokens NOT sent vs. dumping all candidate files. "
+            "Filled by codegraft."
+        ),
+    )
 
 
 class ImplementationPlan(BaseModel):

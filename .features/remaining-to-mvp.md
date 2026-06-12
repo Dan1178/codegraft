@@ -90,24 +90,22 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
 - [x] `RepoAnalysis.ranking_signal` exposed; tests for signal + snapshot + cell-escape
       (`tests/test_text.py`, `test_renderer.py`) — 62 passing, 1 opt-in skipped
 
-### Mini-feature — Estimated token savings ⬜  *(next; small, ~1–2h)*
+### Mini-feature — Estimated token savings ✅
 Quantify the selective-context thesis: how many tokens codegraft *avoided*
 sending by shipping a bounded bundle instead of the whole candidate set.
-- [ ] `utils/tokens.py`: `estimate_tokens(chars)` heuristic (~4 chars/token,
-      clearly labelled an estimate — NOT tiktoken, which is OpenAI's tokenizer
-      and wrong for Claude; optional future: Anthropic `count_tokens` for accuracy)
-- [ ] Compute on a `RepoAnalysis`: baseline = Σ candidate-file chars (the naive
-      "dump the repo" alternative) vs bundle = `context_chars`; report
-      `saved = baseline − bundle` and `% reduction`
-- [ ] Surface in `inspect` (one line) and in the plan's Generation Metadata
-      section / `--json`
-- [ ] Test: deterministic estimate + savings math (`tests/test_tokens.py`)
-- Why small: sizes already live on `RepoScan.files.size_bytes` and bundle size on
-  `RepoAnalysis.context_chars`; only the estimator + display are new.
-- Related: see `test-plan.md` §2c; complements the deferred anti-hallucination
-  gate (§2b #2) as a concrete output-quality/value metric.
+- [x] `utils/tokens.py`: `estimate_tokens(chars)` (~4 chars/token heuristic,
+      labelled an estimate — NOT tiktoken; `TokenEstimate` + `estimate_savings`)
+- [x] `RepoAnalysis.token_estimate()`: baseline = Σ candidate-file `size_bytes`
+      (the naive "dump the repo" alternative) vs bundle = `context_chars`;
+      reports `saved_tokens` + `saved_pct`, clamped ≥ 0
+- [x] Surfaced in `inspect` (one line) and in the plan's Generation Metadata
+      (two new fields on `GenerationMetadata`, stamped by the service; renderer
+      prints them; snapshot regenerated). `--json` exposure lands with Phase 6.
+- [x] Tests (`tests/test_tokens.py`) — estimator, savings math, clamping, empty
+      repo, end-to-end on a fixture. 67 passing, 1 opt-in skipped.
+- Live check: "add an openai provider" on this repo → ~46k tokens (83%) saved.
 
-### Phase 6 — OpenAI provider & portfolio polish ⬜
+### Phase 6 — OpenAI provider & portfolio polish ⬜  *(next)*
 - [ ] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`)
 - [ ] Debug artifacts: selected files + raw plan JSON (`plans/_debug/`)
 - [ ] `--json` / `--debug-context` output options
