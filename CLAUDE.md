@@ -55,9 +55,10 @@ repo path + request
 
 1. ✅ **Foundation & contract** — package, typed config + plan models, Typer CLI,
    stub plan path writing Markdown, 14 passing tests. **Done.**
-2. ⬜ **Discovery & ignore engine** (git ls-files, PathSpec fallback, safety
-   denylist) — *next.*
-3. ⬜ Repo summary, ranking, snippet extraction; real `inspect`.
+2. ✅ **Discovery & ignore engine** — git ls-files (tracked/untracked), PathSpec
+   nested-gitignore fallback, safety denylist (secrets/binaries/oversized),
+   typed `RepoScan`, real `inspect` discovery preview, 27 passing tests. **Done.**
+3. ⬜ **Repo summary, ranking, snippet extraction**; richer `inspect` — *next.*
 4. ⬜ Anthropic provider + prompt assembly + structured output → `ImplementationPlan`.
 5. ⬜ Markdown rendering polish + per-phase handoff prompts.
 6. ⬜ OpenAI provider + portfolio polish (README, demo, screenshots).

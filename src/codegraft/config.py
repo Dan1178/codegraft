@@ -37,15 +37,16 @@ class RepoConfig(BaseModel):
     max_file_bytes: int = 180_000
     max_file_lines: int = 4_000
     max_candidate_files: int = 2_500
+    # Vendor / build / noise directories. Secrets and binaries are handled
+    # authoritatively by repo.safety, so they are intentionally NOT duplicated
+    # here (that keeps skip reasons accurate, e.g. ".env" -> "secret").
     extra_excludes: list[str] = Field(
         default_factory=lambda: [
-            "**/.env*",
-            "**/*.pem",
-            "**/*.key",
             "**/node_modules/**",
             "**/.venv/**",
             "**/dist/**",
             "**/build/**",
+            "**/__pycache__/**",
         ]
     )
 
@@ -122,14 +123,13 @@ prefer_git_ls_files = true
 max_file_bytes = 180000
 max_file_lines = 4000
 max_candidate_files = 2500
+# Secrets/binaries are handled by codegraft's safety filter, not listed here.
 extra_excludes = [
-  "**/.env*",
-  "**/*.pem",
-  "**/*.key",
   "**/node_modules/**",
   "**/.venv/**",
   "**/dist/**",
   "**/build/**",
+  "**/__pycache__/**",
 ]
 
 [analysis]

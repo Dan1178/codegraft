@@ -12,6 +12,7 @@ from codegraft.models.plan import (
     RiskSeverity,
     TestItem,
 )
+from codegraft.models.repo import RepoFile, RepoScan, SkippedFile
 
 __all__ = [
     "AgentPrompt",
@@ -20,8 +21,11 @@ __all__ = [
     "ImplementationPlan",
     "PlanPhase",
     "PlannedFileChange",
+    "RepoFile",
+    "RepoScan",
     "ReviewedFile",
     "RiskItem",
     "RiskSeverity",
+    "SkippedFile",
     "TestItem",
 ]

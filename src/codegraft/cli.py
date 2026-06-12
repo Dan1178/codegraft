@@ -94,23 +94,55 @@ def init(
 
 @app.command()
 def inspect(
-    request: str = typer.Argument(..., help="Feature request to analyze."),
+    request: str = typer.Argument(
+        None, help="Feature request (used for ranking in Phase 3)."
+    ),
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
+    limit: int = typer.Option(20, "--limit", help="How many discovered files to list."),
 ) -> None:
-    """Preview what codegraft considers important (no model call).
+    """Preview what codegraft sees in a repo (no model call).
 
-    Phase 1 placeholder: the deterministic ranking/snippet preview is implemented
-    in Phase 3.
+    Phase 2: shows discovery results — candidate files, skip reasons, and whether
+    git or the filesystem fallback was used. Relevance ranking arrives in Phase 3.
     """
 
+    from rich.table import Table
+
+    from codegraft.repo.discover import discover_repo
+
+    try:
+        config = Config.load(repo)
+        scan = discover_repo(repo, config)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
     console.print(BANNER)
+    source = "git ls-files" if scan.used_git else "filesystem walk (no git)"
     console.print(
-        f"[yellow]inspect[/yellow] is not implemented yet (arrives in Phase 3).\n"
-        f"Request: [italic]{request}[/italic]\nRepo:    {repo}"
+        f"\nRepo: {scan.root}\nDiscovery: [bold]{source}[/bold]  "
+        f"Kept: [green]{scan.file_count}[/green]  Skipped: [yellow]{len(scan.skipped)}[/yellow]"
+        + ("  [red](candidate list truncated)[/red]" if scan.truncated else "")
     )
+    if request:
+        console.print(f"Request: [italic]{request}[/italic] "
+                      "[dim](ranking lands in Phase 3)[/dim]")
+
+    skip_counts = scan.skipped_by_reason()
+    if skip_counts:
+        summary = "  ".join(f"{reason}={n}" for reason, n in sorted(skip_counts.items()))
+        console.print(f"[dim]Skips by reason:[/dim] {summary}")
+
+    table = Table(title=f"First {min(limit, scan.file_count)} candidate files")
+    table.add_column("Path", overflow="fold")
+    table.add_column("Bytes", justify="right")
+    table.add_column("Tracked", justify="center")
+    for f in scan.files[:limit]:
+        table.add_row(f.path, str(f.size_bytes), "yes" if f.tracked else "no")
+    console.print(table)
 
 
 @app.command()

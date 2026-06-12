@@ -21,19 +21,25 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
 - [x] CLI + renderer + filename tests (14 passing)
 - [x] Windows UTF-8 console fix
 
-### Phase 2 — Discovery & ignore engine ⬜  *(next)*
-- [ ] Git-aware discovery: `git ls-files --cached --others --exclude-standard --full-name -z`
-- [ ] Filesystem fallback via PathSpec `GitIgnoreSpec`
-- [ ] Safety denylist (never send to model): `.env*`, `*.pem`, `*.key`, certs/creds,
-      state files, binaries, generated bundles, minified assets, oversized files,
-      vendor/dependency dirs
-- [ ] Size/line caps (`max_file_bytes`, `max_file_lines`, `max_candidate_files`)
-- [ ] Typed file-metadata model (`models/repo.py`)
-- [ ] Fixture repos + tests: nested `.gitignore`, tracked-but-ignored still listed,
-      denylist behaviour (`tests/test_discovery.py`, `test_ignore.py`)
-- [ ] Modules: `repo/discover.py`, `git_scan.py`, `ignore.py`, `safety.py`
+### Phase 2 — Discovery & ignore engine ✅
+- [x] Git-aware discovery: `git ls-files --cached` + `--others --exclude-standard`,
+      `--full-name -z` (two scoped calls to label tracked vs untracked)
+- [x] Filesystem fallback via PathSpec `GitIgnoreSpec` with nested `.gitignore` scoping
+- [x] Safety denylist owns secrets/binaries: `.env*`, `*.pem/key/crt/...`, private
+      keys, certs, `.npmrc`/`.pypirc`, minified/generated, NUL-byte binary sniff,
+      oversized (`max_file_bytes`)
+- [x] `max_candidate_files` cap with `truncated` flag (line cap deferred to Phase 3
+      snippet reading, where files are read anyway)
+- [x] Typed file-metadata models (`models/repo.py`: `RepoFile`, `SkippedFile`, `RepoScan`)
+- [x] Real `inspect`: discovery summary, skip-by-reason counts, candidate table
+- [x] Tests: tracked+untracked, tracked-but-later-ignored survives, untracked+ignored
+      excluded, secrets/binaries/oversized excluded, nested gitignore, dir pruning,
+      fallback path (`tests/test_discovery.py`, `test_ignore.py`) — 27 passing total
+- [x] Modules: `repo/discover.py`, `git_scan.py`, `ignore.py`, `safety.py`
+- Note: `extra_excludes` now covers only vendor/build dirs; `safety.py` is the
+  single authority for secrets (keeps skip reasons accurate).
 
-### Phase 3 — Repo summary, ranking, snippets ⬜
+### Phase 3 — Repo summary, ranking, snippets ⬜  *(next)*
 - [ ] Compact depth-limited directory tree (`repo/tree.py`)
 - [ ] Language/framework/manifest/entry-point detection (`repo/detect.py`)
 - [ ] Repo summary assembly (`repo/summarize.py`)
