@@ -101,6 +101,10 @@ def inspect(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
+    request_file: Optional[Path] = typer.Option(
+        None, "--request-file", help="Read the feature request from a file.",
+        exists=True, dir_okay=False, resolve_path=True,
+    ),
     subdir: Optional[str] = typer.Option(
         None, "--subdir", help="Scope analysis to a repo-relative subdirectory."
     ),
@@ -112,7 +116,8 @@ def inspect(
 
     With a request, this is the ranking/tuning surface: repo summary, the
     deterministically-ranked files with their score breakdown, and the bounded
-    context snippets that would be sent to a provider.
+    context snippets that would be sent to a provider. Pair with --request-file
+    to preview ranking for a long-form request before spending an API call.
     """
 
     from rich.table import Table
@@ -120,11 +125,13 @@ def inspect(
     from codegraft.repo.analyze import analyze_repo
 
     try:
+        request_text = _read_request(request, request_file, required=False)
         config = Config.load(repo)
-        analysis = analyze_repo(request or "", repo, config, subdir=subdir)
+        analysis = analyze_repo(request_text or "", repo, config, subdir=subdir)
     except CodegraftError as exc:
         err_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1)
+    request = request_text  # may be None for summary-only mode
 
     scan, summary = analysis.scan, analysis.summary
     console.print(BANNER)
@@ -160,14 +167,24 @@ def inspect(
         )
         return
 
+    # A long request is ranked by a focused signal — show it so the user knows
+    # what actually drove file selection.
+    if analysis.ranking_signal.strip() != (request or "").strip():
+        console.print(
+            f"[dim]Ranking signal:[/dim] [italic]{analysis.ranking_signal}[/italic] "
+            "[dim](full request still goes to the model)[/dim]"
+        )
+
     if not analysis.ranked:
         console.print(
-            f"\n[yellow]No files ranked[/yellow] for: [italic]{request}[/italic]\n"
+            f"\n[yellow]No files ranked[/yellow] for: [italic]{analysis.ranking_signal}[/italic]\n"
             "[dim]Try more specific keywords, or widen --subdir.[/dim]"
         )
         return
 
-    table = Table(title=f"Ranked files for: {request}")
+    flat_req = " ".join(request.split())
+    title_req = flat_req if len(flat_req) <= 60 else flat_req[:57] + "..."
+    table = Table(title=f"Ranked files for: {title_req}")
     table.add_column("#", justify="right")
     table.add_column("Score", justify="right")
     table.add_column("Path", overflow="fold")
@@ -232,7 +249,7 @@ def plan(
     from codegraft.planning.service import generate_plan
 
     try:
-        request_text = _resolve_request(request, request_file)
+        request_text = _read_request(request, request_file, required=True)
         config = Config.load(repo)
         if provider:
             config.provider.name = provider
@@ -265,7 +282,15 @@ def plan(
         raise typer.Exit(code=1)
 
 
-def _resolve_request(request: Optional[str], request_file: Optional[Path]) -> str:
+def _read_request(
+    request: Optional[str], request_file: Optional[Path], *, required: bool
+) -> Optional[str]:
+    """Resolve the feature request from an argument or a file.
+
+    A file (when given) wins over the positional argument. Returns None when
+    nothing is supplied and *required* is False (summary-only inspect).
+    """
+
     if request_file is not None:
         text = request_file.read_text(encoding="utf-8").strip()
         if not text:
@@ -273,7 +298,9 @@ def _resolve_request(request: Optional[str], request_file: Optional[Path]) -> st
         return text
     if request and request.strip():
         return request.strip()
-    raise CodegraftError("provide a feature request argument or --request-file")
+    if required:
+        raise CodegraftError("provide a feature request argument or --request-file")
+    return None
 
 
 def _write_plan(

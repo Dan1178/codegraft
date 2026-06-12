@@ -54,3 +54,34 @@ def extract_keywords(request: str, min_len: int = 3) -> set[str]:
         for tok in tokenize(request)
         if len(tok) >= min_len and tok not in STOPWORDS
     }
+
+
+_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s")
+
+
+def ranking_signal(text: str, max_chars: int = 240) -> str:
+    """Derive a focused ranking signal from a (possibly long) feature request.
+
+    The *full* request still goes to the model — but a long, constraint-laden
+    request floods keyword extraction and dilutes file ranking. So for long
+    inputs we focus on the part that states the goal: a leading markdown heading,
+    else the first line, else the first sentence. Short requests pass through
+    unchanged, preserving today's behaviour.
+    """
+
+    stripped = text.strip()
+    if len(stripped) <= max_chars:
+        return stripped
+
+    # Prefer a leading markdown heading (e.g. "# Add an OpenAI provider").
+    for line in stripped.splitlines():
+        if line.lstrip().startswith("#"):
+            heading = line.lstrip("#").strip()
+            if heading:
+                return heading
+
+    first_line = next((ln.strip() for ln in stripped.splitlines() if ln.strip()), stripped)
+    if len(first_line) > max_chars:
+        # A single long paragraph: take its first sentence.
+        return _SENTENCE_SPLIT.split(first_line, maxsplit=1)[0]
+    return first_line

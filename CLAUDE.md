@@ -67,8 +67,11 @@ repo path + request
    via `messages.parse(output_format=ImplementationPlan)`, real `generate_plan`
    orchestration (metadata stamped by codegraft), `plan --stub` offline mode,
    mocked tests + opt-in live marker. **Done.** `plan` is now real.
-5. ⬜ **Markdown rendering polish** + snapshot tests + checked-in sample plans — *next.*
-6. ⬜ OpenAI provider + portfolio polish (README, demo, screenshots).
+5. ✅ **Markdown rendering & request handling** — table-cell escaping, snapshot
+   test vs checked-in `examples/sample_plans/add-rbac.md`, title/body ranking-
+   signal split for long requests, `inspect --request-file`, 62 tests. **Done.**
+6. ⬜ **OpenAI provider** + portfolio polish (README, demo, screenshots, `--json`,
+   debug artifacts) — *next.*
 
 ## Scope guardrails — DO NOT build in V1
 

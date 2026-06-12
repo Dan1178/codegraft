@@ -17,6 +17,16 @@ from codegraft.models.plan import ImplementationPlan
 _NONE = "_None expected._"
 
 
+def _cell(text: str) -> str:
+    """Make a string safe inside a Markdown table cell.
+
+    A literal ``|`` or a newline in a model-produced path/reason would otherwise
+    break the table layout. Escape pipes and flatten newlines.
+    """
+
+    return text.replace("|", "\\|").replace("\n", " ").strip()
+
+
 def _bullets(items: list[str]) -> str:
     if not items:
         return _NONE
@@ -43,7 +53,7 @@ def render_markdown(plan: ImplementationPlan) -> str:
     if plan.files_reviewed:
         rows = ["| Path | Why It Matters | Confidence |", "|------|----------------|------------|"]
         for f in plan.files_reviewed:
-            rows.append(f"| `{f.path}` | {f.why_it_matters} | {f.confidence.value} |")
+            rows.append(f"| `{_cell(f.path)}` | {_cell(f.why_it_matters)} | {f.confidence.value} |")
         files_reviewed = "\n".join(rows)
     else:
         files_reviewed = _NONE
@@ -53,7 +63,7 @@ def render_markdown(plan: ImplementationPlan) -> str:
     if plan.files_likely_to_modify:
         rows = ["| Path | Expected Change | Reason |", "|------|-----------------|--------|"]
         for f in plan.files_likely_to_modify:
-            rows.append(f"| `{f.path}` | {f.expected_change} | {f.reason} |")
+            rows.append(f"| `{_cell(f.path)}` | {_cell(f.expected_change)} | {_cell(f.reason)} |")
         files_modify = "\n".join(rows)
     else:
         files_modify = _NONE

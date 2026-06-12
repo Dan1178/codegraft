@@ -75,6 +75,29 @@ def test_plan_request_file(tmp_path: Path) -> None:
     assert list((tmp_path / "plans").glob("*.md"))
 
 
+def test_inspect_summary_only(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("print('hi')\n", encoding="utf-8")
+    result = runner.invoke(app, ["inspect", "--repo", str(tmp_path)])
+    assert result.exit_code == 0
+    assert "Pass a feature request" in result.stdout
+
+
+def test_inspect_request_file(tmp_path: Path) -> None:
+    (tmp_path / "auth.py").write_text("def check_role(role):\n    return role\n", encoding="utf-8")
+    req = tmp_path / "feature.md"
+    req.write_text(
+        "# Add role checks\n\nLong body describing constraints and goals. " * 20,
+        encoding="utf-8",
+    )
+    result = runner.invoke(
+        app, ["inspect", "--repo", str(tmp_path), "--request-file", str(req)]
+    )
+    assert result.exit_code == 0
+    # The focused ranking signal (the heading) is surfaced to the user.
+    assert "Ranking signal" in result.stdout
+    assert "Add role checks" in result.stdout
+
+
 def test_plan_unknown_provider_errors(tmp_path: Path) -> None:
     # Error text goes to stderr (Rich err_console); the message itself is
     # asserted at the service layer in test_providers. Here we just confirm the

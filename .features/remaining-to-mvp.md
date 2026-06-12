@@ -77,14 +77,20 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
       (`tests/test_providers.py`) — 54 passing, 1 opt-in skipped
 - Note: `max_output_tokens` raised 5000→8000 to avoid truncating a full plan.
 
-### Phase 5 — Markdown rendering & handoff prompts ⬜  *(next)*
-- [ ] Renderer polish; confirm all required sections stable from real plans
-- [ ] Per-phase Claude Code prompts rendered from phase data (not a 2nd LLM call)
-- [ ] Timestamped filenames into `/plans`
-- [ ] Snapshot-style renderer tests (`tests/test_renderer.py` expansion)
-- [ ] Checked-in `examples/sample_plans/`
+### Phase 5 — Markdown rendering & request handling ✅
+- [x] Renderer polish: table-cell escaping (pipes/newlines can't break tables)
+- [x] Per-phase Claude Code prompts rendered from phase data (done since Phase 1)
+- [x] Timestamped filenames into `/plans` (done since Phase 1)
+- [x] Snapshot renderer test against a checked-in example (deterministic metadata)
+- [x] Checked-in `examples/sample_plans/add-rbac.md` + `examples/demo_requests/add-rbac.md`
+- [x] **Title/body ranking-signal split** (`utils/text.ranking_signal`): long
+      requests are ranked by their heading/first-line/first-sentence while the
+      full text goes to the model — keeps ranking sharp on verbose requests
+- [x] **`inspect --request-file`** + surfaces the ranking signal when it differs
+- [x] `RepoAnalysis.ranking_signal` exposed; tests for signal + snapshot + cell-escape
+      (`tests/test_text.py`, `test_renderer.py`) — 62 passing, 1 opt-in skipped
 
-### Phase 6 — OpenAI provider & portfolio polish ⬜
+### Phase 6 — OpenAI provider & portfolio polish ⬜  *(next)*
 - [ ] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`)
 - [ ] Debug artifacts: selected files + raw plan JSON (`plans/_debug/`)
 - [ ] `--json` / `--debug-context` output options
@@ -99,8 +105,9 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
 
 **Should-have** (fold into phases above)
 - [ ] `--stdout` / `--json` output options  *(`--stdout` done; `--json` pending Phase 6)*
-- [ ] Debug artifact of selected files + context snippets
-- [ ] Richer Rich formatting for ranking previews / summaries / status
+- [ ] Debug artifact of selected files + context snippets  *(Phase 6)*
+- [x] Richer Rich formatting for ranking previews / summaries / status
+- [x] `--request-file` for both `plan` and `inspect`; long-request title/body split
 
 **Nice-to-have** (only if genuinely easy)
 - [ ] Shell completion via Typer
