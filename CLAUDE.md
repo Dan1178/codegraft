@@ -1,0 +1,81 @@
+# CLAUDE.md — codegraft
+
+Guidance for AI coding agents working in this repository.
+
+## What this is
+
+codegraft is a **local-first implementation-planning CLI**. It takes a feature
+request plus a real local repository and produces a structured, evidence-backed
+Markdown implementation plan (impacted files, risks, tests, phased steps, and
+per-phase handoff prompts) for coding agents.
+
+The core bet: a **deterministic pipeline** does all the repo work (discovery,
+ignore/safety, ranking, snippet extraction), then **one schema-constrained LLM
+call** returns a typed `ImplementationPlan`, then **deterministic rendering**
+turns it into Markdown. Everything except the single planning call is testable
+without a model.
+
+## Commands
+
+```bash
+# Install (editable, with dev deps)
+pip install -e ".[dev]"
+
+# Run the CLI
+codegraft --help
+codegraft init
+codegraft plan "Add RBAC to admin routes" --repo .
+
+# Tests
+pytest                  # all deterministic + mocked tests
+pytest -m live_anthropic  # opt-in, hits the real API (needs ANTHROPIC_API_KEY)
+```
+
+## Architecture (boundaries to respect)
+
+```
+repo path + request
+  → CLI + config        (cli.py, config.py)
+  → repo analysis       (repo/*: discover, ignore, safety, tree, detect,
+                         summarize, rank, snippets)   [deterministic]
+  → PlanningRequest
+  → provider adapter    (providers/*: base + anthropic + openai)  [the ONE call]
+  → ImplementationPlan  (models/plan.py)               [validated]
+  → renderer            (planning/renderer.py)          [deterministic]
+  → plans/<date>-<slug>.md
+```
+
+- `models/plan.py` is the **output contract**. Provider adapters must return a
+  validated `ImplementationPlan`, never Markdown.
+- Keep provider-specific code inside its adapter.
+- The renderer must always emit every section (empty → "None expected.").
+- Claude Code prompts are rendered from structured phase data, not a 2nd LLM call.
+
+## Build phases (current status)
+
+1. ✅ **Foundation & contract** — package, typed config + plan models, Typer CLI,
+   stub plan path writing Markdown, 14 passing tests. **Done.**
+2. ⬜ **Discovery & ignore engine** (git ls-files, PathSpec fallback, safety
+   denylist) — *next.*
+3. ⬜ Repo summary, ranking, snippet extraction; real `inspect`.
+4. ⬜ Anthropic provider + prompt assembly + structured output → `ImplementationPlan`.
+5. ⬜ Markdown rendering polish + per-phase handoff prompts.
+6. ⬜ OpenAI provider + portfolio polish (README, demo, screenshots).
+
+## Scope guardrails — DO NOT build in V1
+
+No embeddings/vector stores/RAG. No tree-sitter / full AST across languages. No
+git-diff validation against the plan. No multi-agent planner+reviewer by default.
+No SQLite project memory. No remote repo cloning. No web UI, MCP server, or IDE
+plugin. No "let codegraft edit code / run Claude Code for you."
+
+If an idea doesn't make the **single-run local planning pipeline** noticeably
+better, it goes to V2.
+
+## Conventions
+
+- Python 3.11+, `from __future__ import annotations`, full type hints.
+- Pydantic v2 models for all structured data. Typer for CLI, Rich for output.
+- Cross-platform: this is developed on Windows. Use `pathlib`, pass explicit
+  `encoding="utf-8"` on file I/O, and don't assume POSIX-only shell behaviour.
+- Secrets come only from env/`.env`; never write or render API keys.
