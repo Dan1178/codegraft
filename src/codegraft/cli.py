@@ -237,6 +237,9 @@ def plan(
     stdout: bool = typer.Option(
         False, "--stdout", help="Print the plan to stdout instead of a file."
     ),
+    as_json: bool = typer.Option(
+        False, "--json", help="Emit the plan as JSON to stdout (for scripting)."
+    ),
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Build the plan but do not write any file."
     ),
@@ -266,19 +269,29 @@ def plan(
                 f"{config.provider.name}/{config.provider.model}..."
             ):
                 plan_obj = generate_plan(request_text, repo, config, subdir=subdir)
-        markdown = render_markdown(plan_obj)
 
+        if as_json:
+            # Plain echo so Rich markup/reflow can't corrupt the JSON.
+            typer.echo(plan_obj.model_dump_json(indent=2))
+            return
+
+        markdown = render_markdown(plan_obj)
         if stdout:
             console.print(markdown)
             return
 
-        out_path = _write_plan(repo, config.output.output_dir, request_text, markdown, dry_run)
+        stem = plan_stem(request_text)
+        out_path = _write_plan(repo, config.output.output_dir, stem, markdown, dry_run)
         if dry_run:
             console.print(
                 f"[cyan]--dry-run[/cyan]: plan built ({len(markdown)} chars), not written."
             )
-        else:
-            console.print(f"[green]Wrote plan[/green] -> {out_path}")
+            return
+
+        console.print(f"[green]Wrote plan[/green] -> {out_path}")
+        if config.output.write_debug_json and not stub:
+            debug_path = _write_debug_json(repo, config.output.output_dir, stem, plan_obj)
+            console.print(f"[dim]Debug plan JSON -> {debug_path}[/dim]")
     except CodegraftError as exc:
         err_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1)
@@ -306,14 +319,24 @@ def _read_request(
 
 
 def _write_plan(
-    repo: Path, output_dir: str, request: str, markdown: str, dry_run: bool
+    repo: Path, output_dir: str, stem: str, markdown: str, dry_run: bool
 ) -> Path:
     plans_dir = repo / output_dir
-    out_path = plans_dir / f"{plan_stem(request)}.md"
+    out_path = plans_dir / f"{stem}.md"
     if not dry_run:
         plans_dir.mkdir(parents=True, exist_ok=True)
         out_path.write_text(markdown, encoding="utf-8")
     return out_path
+
+
+def _write_debug_json(repo: Path, output_dir: str, stem: str, plan_obj) -> Path:
+    """Write the raw plan object to plans/_debug/<stem>.plan.json for transparency."""
+
+    debug_dir = repo / output_dir / "_debug"
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    debug_path = debug_dir / f"{stem}.plan.json"
+    debug_path.write_text(plan_obj.model_dump_json(indent=2), encoding="utf-8")
+    return debug_path
 
 
 if __name__ == "__main__":

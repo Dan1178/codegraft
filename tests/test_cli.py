@@ -98,6 +98,32 @@ def test_inspect_request_file(tmp_path: Path) -> None:
     assert "Add role checks" in result.stdout
 
 
+def test_plan_json_output(tmp_path: Path) -> None:
+    import json
+
+    result = runner.invoke(
+        app, ["plan", "Add caching", "--repo", str(tmp_path), "--stub", "--json"]
+    )
+    assert result.exit_code == 0, result.stdout
+    data = json.loads(result.stdout)
+    assert data["title"]
+    assert "implementation_phases" in data
+    assert not (tmp_path / "plans").exists()  # --json doesn't write a file
+
+
+def test_write_debug_json_helper(tmp_path: Path) -> None:
+    import json
+
+    from codegraft.cli import _write_debug_json
+    from codegraft.models.plan import ImplementationPlan
+
+    plan = ImplementationPlan(title="T", feature_summary="S")
+    path = _write_debug_json(tmp_path, "plans", "2026-06-11-t", plan)
+
+    assert path == tmp_path / "plans" / "_debug" / "2026-06-11-t.plan.json"
+    assert json.loads(path.read_text(encoding="utf-8"))["title"] == "T"
+
+
 def test_plan_unknown_provider_errors(tmp_path: Path) -> None:
     # Error text goes to stderr (Rich err_console); the message itself is
     # asserted at the service layer in test_providers. Here we just confirm the
