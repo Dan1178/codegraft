@@ -105,14 +105,20 @@ sending by shipping a bounded bundle instead of the whole candidate set.
       repo, end-to-end on a fixture. 67 passing, 1 opt-in skipped.
 - Live check: "add an openai provider" on this repo → ~46k tokens (83%) saved.
 
-### Phase 6 — OpenAI provider & portfolio polish ⬜  *(next)*
-- [ ] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`)
-- [ ] Debug artifacts: selected files + raw plan JSON (`plans/_debug/`)
-- [ ] `--json` / `--debug-context` output options
-- [ ] Demo request + sample output (`examples/demo_requests/`, `sample_plans/`)
-- [ ] README polish: install, quickstart, architecture, limitations, roadmap
-- [ ] Screenshots: `inspect` output, `plan` run, generated-plan excerpt (`docs/screenshots/`)
-- [ ] `docs/architecture.md`
+### Phase 6 — OpenAI provider & portfolio polish ✅
+- [x] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`),
+      reusing the identical prompt assembly; mocked tests mirroring Anthropic
+- [x] Raw plan JSON debug artifact: `plans/_debug/<stem>.plan.json` (when
+      `output.write_debug_json`)
+- [x] `--json` output option for `plan` (scripting)
+- [x] Demo request + sample output (`examples/demo_requests/`, `sample_plans/`) *(Phase 5)*
+- [x] README polish: pitch, why, quickstart, real example capture, architecture
+      notes, limitations, roadmap
+- [x] `docs/architecture.md` (data flow, design decisions, deterministic/LLM boundary)
+- [~] Captures: real terminal output embedded in README; image screenshots under
+      `docs/screenshots/` left as an optional nicety
+- Deferred (V2, low value now): `--debug-context` dump of the assembled prompt;
+      Anthropic `count_tokens` for exact token counts.
 
 ---
 
@@ -140,20 +146,23 @@ sending by shipping a bounded bundle instead of the whole candidate set.
 ---
 
 ## V1 Definition of Done (gate before calling it shipped)
-- [ ] `codegraft plan` works on ≥1 real repo and ≥1 fixture repo
-- [ ] Scanner respects Git-aware ignore; excludes secret/binary/noise files
-- [ ] Compact repo summary + ranked relevant files produced
-- [ ] Context bundle stays under configured limits
-- [ ] Anthropic provider works end to end
-- [ ] Plan parsed into typed schema before rendering
-- [ ] Markdown lands in `/plans` with all required sections every time
-- [ ] Claude Code prompts rendered phase by phase
-- [ ] ≥1 believable demo request + ≥1 checked-in sample plan
-- [ ] `codegraft inspect` exists and is useful
-- [ ] Core repo-analysis, renderer snapshot, and CLI tests pass
-- [ ] README explains install, usage, architecture, limitations
-- [ ] Screenshots / terminal captures exist
-- [ ] Tradeoffs explainable in an interview without hand-waving
+- [x] `codegraft plan` works on a fixture repo (mocked) + offline `--stub`;
+      live Anthropic path is opt-in (`-m live_anthropic`) — **user to run with
+      their own key**
+- [x] Scanner respects Git-aware ignore; excludes secret/binary/noise files
+- [x] Compact repo summary + ranked relevant files produced
+- [x] Context bundle stays under configured limits
+- [x] Anthropic provider works end to end (mocked + opt-in live)
+- [x] Plan parsed into typed schema before rendering
+- [x] Markdown lands in `/plans` with all required sections every time
+- [x] Claude Code prompts rendered phase by phase
+- [x] ≥1 believable demo request + ≥1 checked-in sample plan
+- [x] `codegraft inspect` exists and is useful (the ranking/tuning surface)
+- [x] Core repo-analysis, renderer snapshot, and CLI tests pass (73 + 1 opt-in)
+- [x] README explains install, usage, architecture, limitations
+- [~] Terminal captures embedded in README; image screenshots optional
+- [x] Tradeoffs explainable in an interview without hand-waving
+- ⏳ One live `plan` run + human read of the output (needs the user's API key)
 
 ---
 

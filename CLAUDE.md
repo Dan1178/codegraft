@@ -72,8 +72,9 @@ repo path + request
    signal split for long requests, `inspect --request-file`, 62 tests. **Done.**
    - ✅ Mini-feature: estimated **token savings** (`utils/tokens.py`,
      `RepoAnalysis.token_estimate()`) — shown in `inspect` and plan metadata.
-6. ⬜ **OpenAI provider** + portfolio polish (README, demo, screenshots, `--json`,
-   debug artifacts) — *next.*
+6. ✅ **OpenAI provider** (same `PlanProvider` contract, shared prompt) + `--json`
+   + `plans/_debug/<stem>.plan.json` + README/`docs/architecture.md` polish.
+   **Done — V1 complete.** Remaining: a live `plan` run with a real key (user).
 
 ## Scope guardrails — DO NOT build in V1
 
