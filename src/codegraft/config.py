@@ -27,8 +27,12 @@ class ProviderConfig(BaseModel):
     # Intentionally not pinned to a model that may be deprecated; overridable in
     # codegraft.toml and via --model. Balanced default for planning work.
     model: str = "claude-sonnet-4-6"
-    temperature: float = 0.2
-    max_output_tokens: int = 5000
+    # Optional: newer models (Opus 4.7+/Fable) reject sampling params, so the
+    # provider only sends this to models that accept it. None = never send.
+    temperature: float | None = 0.2
+    # A full ImplementationPlan with phases + handoff prompts is sizeable; keep
+    # generous headroom so structured output isn't truncated mid-JSON.
+    max_output_tokens: int = 8000
 
 
 class RepoConfig(BaseModel):
@@ -115,7 +119,7 @@ DEFAULT_CONFIG_TOML = """\
 name = "anthropic"
 model = "claude-sonnet-4-6"
 temperature = 0.2
-max_output_tokens = 5000
+max_output_tokens = 8000
 
 [repo]
 respect_gitignore = true

@@ -25,19 +25,22 @@ Everything except the single planning call is deterministic and unit-tested.
 ## Quickstart
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[dev,anthropic]"
 
 codegraft init                              # write codegraft.toml
-# set ANTHROPIC_API_KEY (and/or OPENAI_API_KEY) in your environment or .env
+# set ANTHROPIC_API_KEY in your environment or a .env file
 
-codegraft plan "Add RBAC to admin routes" --repo .
+codegraft inspect "Add RBAC to admin routes" --repo .   # preview (no API call)
+codegraft plan "Add RBAC to admin routes" --repo .      # real plan via Anthropic
 ```
 
 The plan lands in `plans/<date>-<slug>.md`.
 
-> **Status:** Phase 1 (foundation & contract). The `plan` command currently
-> writes a clearly-marked **stub** plan to prove the end-to-end path. Real repo
-> analysis and provider calls arrive in later phases — see [CLAUDE.md](CLAUDE.md).
+> **Status:** Phases 1–4 complete. `inspect` and `plan` both work end to end —
+> `plan` runs the deterministic analysis, calls Anthropic for a schema-validated
+> `ImplementationPlan`, and renders Markdown. `codegraft plan --stub` produces an
+> offline placeholder with no API key. The OpenAI provider and final portfolio
+> polish are the remaining phases — see [CLAUDE.md](CLAUDE.md).
 
 ## Commands
 

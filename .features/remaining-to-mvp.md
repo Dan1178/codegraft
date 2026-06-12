@@ -59,17 +59,25 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
   surface exposed (symbol-scoring on doc code blocks; content-only files dropped
   before content read). See `cautions-and-pushbacks.md` #1.
 
-### Phase 4 — Anthropic planning core ⬜  *(next)*
-- [ ] **Verify Anthropic structured-output API for real** (see cautions #3)
-- [ ] `PlanProvider` protocol (`providers/base.py`)
-- [ ] Anthropic provider (`providers/anthropic_provider.py`)
-- [ ] XML-tagged prompt templates (`prompts/planner_system.md`, `planner_user.md`, `phase_prompt.md`)
-- [ ] Prompt assembly from deterministic context blocks
-- [ ] Structured output → validated `ImplementationPlan`; fail loudly on malformed
-- [ ] Planning orchestration replaces the stub (`planning/service.py`)
-- [ ] Mocked provider tests + opt-in `live_anthropic` marker (`tests/test_providers.py`)
+### Phase 4 — Anthropic planning core ✅
+- [x] **Verified Anthropic structured-output API** (caution #3 resolved): real
+      support via `messages.parse(output_format=<Pydantic>)` → `.parsed_output`;
+      no JSON-mode fallback needed
+- [x] `PlanProvider` protocol + `PlanningRequest` bundle (`providers/base.py`)
+- [x] Anthropic provider with lazy/injectable SDK client (`providers/anthropic_provider.py`)
+- [x] System prompt as package resource (`prompts/planner_system.md`) + XML user
+      message assembly (`providers/prompt.py`)
+- [x] Structured output → validated `ImplementationPlan`; ProviderError /
+      PlanValidationError on failure (fails loudly)
+- [x] Real `generate_plan` orchestration replacing the stub; metadata stamped by
+      codegraft, not the model (`planning/service.py`); `plan --stub` kept offline
+- [x] Provider factory `get_provider`; cross-model temperature gating
+      (omits sampling params for Opus 4.7+/Fable)
+- [x] Mocked provider/prompt/service tests + opt-in `live_anthropic` marker
+      (`tests/test_providers.py`) — 54 passing, 1 opt-in skipped
+- Note: `max_output_tokens` raised 5000→8000 to avoid truncating a full plan.
 
-### Phase 5 — Markdown rendering & handoff prompts ⬜
+### Phase 5 — Markdown rendering & handoff prompts ⬜  *(next)*
 - [ ] Renderer polish; confirm all required sections stable from real plans
 - [ ] Per-phase Claude Code prompts rendered from phase data (not a 2nd LLM call)
 - [ ] Timestamped filenames into `/plans`

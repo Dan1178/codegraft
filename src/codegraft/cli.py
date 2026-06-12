@@ -205,10 +205,16 @@ def plan(
         None, "--request-file", help="Read the feature request from a file.",
         exists=True, dir_okay=False, resolve_path=True,
     ),
+    subdir: Optional[str] = typer.Option(
+        None, "--subdir", help="Scope analysis to a repo-relative subdirectory."
+    ),
     provider: Optional[str] = typer.Option(
         None, "--provider", help="Override provider (anthropic|openai)."
     ),
     model: Optional[str] = typer.Option(None, "--model", help="Override model id."),
+    stub: bool = typer.Option(
+        False, "--stub", help="Offline placeholder plan; no repo analysis, no API call."
+    ),
     stdout: bool = typer.Option(
         False, "--stdout", help="Print the plan to stdout instead of a file."
     ),
@@ -216,7 +222,14 @@ def plan(
         False, "--dry-run", help="Build the plan but do not write any file."
     ),
 ) -> None:
-    """Generate an implementation plan and write it to the output directory."""
+    """Generate an implementation plan and write it to the output directory.
+
+    Calls the configured provider (default: anthropic) to produce a real,
+    evidence-backed plan. Use --stub to produce an offline placeholder without an
+    API key.
+    """
+
+    from codegraft.planning.service import generate_plan
 
     try:
         request_text = _resolve_request(request, request_file)
@@ -226,7 +239,14 @@ def plan(
         if model:
             config.provider.model = model
 
-        plan_obj = build_stub_plan(request_text, repo, config)
+        if stub:
+            plan_obj = build_stub_plan(request_text, repo, config)
+        else:
+            with console.status(
+                f"Analyzing repo and planning with "
+                f"{config.provider.name}/{config.provider.model}..."
+            ):
+                plan_obj = generate_plan(request_text, repo, config, subdir=subdir)
         markdown = render_markdown(plan_obj)
 
         if stdout:

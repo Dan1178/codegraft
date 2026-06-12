@@ -62,9 +62,12 @@ repo path + request
    framework detection, two-stage explainable ranking, bounded snippets,
    `analyze_repo` entry point, scored `inspect` with `--subdir`/`--snippets`,
    43 passing tests. **Done.**
-4. ⬜ **Anthropic provider** + prompt assembly + structured output →
-   `ImplementationPlan` (consumes `RepoAnalysis` from `repo/analyze.py`) — *next.*
-5. ⬜ Markdown rendering polish + per-phase handoff prompts.
+4. ✅ **Anthropic provider** — `PlanProvider` protocol + `PlanningRequest`,
+   XML prompt assembly (system prompt as package resource), structured output
+   via `messages.parse(output_format=ImplementationPlan)`, real `generate_plan`
+   orchestration (metadata stamped by codegraft), `plan --stub` offline mode,
+   mocked tests + opt-in live marker. **Done.** `plan` is now real.
+5. ⬜ **Markdown rendering polish** + snapshot tests + checked-in sample plans — *next.*
 6. ⬜ OpenAI provider + portfolio polish (README, demo, screenshots).
 
 ## Scope guardrails — DO NOT build in V1

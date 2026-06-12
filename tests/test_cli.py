@@ -30,9 +30,10 @@ def test_init_refuses_overwrite(tmp_path: Path) -> None:
     assert result.exit_code == 1
 
 
-def test_plan_writes_markdown(tmp_path: Path) -> None:
+def test_plan_stub_writes_markdown(tmp_path: Path) -> None:
+    # --stub exercises the output path offline (no provider/API key needed).
     result = runner.invoke(
-        app, ["plan", "Add RBAC to admin routes", "--repo", str(tmp_path)]
+        app, ["plan", "Add RBAC to admin routes", "--repo", str(tmp_path), "--stub"]
     )
     assert result.exit_code == 0, result.stdout
     plans = list((tmp_path / "plans").glob("*.md"))
@@ -44,7 +45,7 @@ def test_plan_writes_markdown(tmp_path: Path) -> None:
 
 def test_plan_dry_run_writes_nothing(tmp_path: Path) -> None:
     result = runner.invoke(
-        app, ["plan", "Add caching", "--repo", str(tmp_path), "--dry-run"]
+        app, ["plan", "Add caching", "--repo", str(tmp_path), "--stub", "--dry-run"]
     )
     assert result.exit_code == 0
     assert not (tmp_path / "plans").exists()
@@ -52,7 +53,7 @@ def test_plan_dry_run_writes_nothing(tmp_path: Path) -> None:
 
 def test_plan_stdout(tmp_path: Path) -> None:
     result = runner.invoke(
-        app, ["plan", "Add caching", "--repo", str(tmp_path), "--stdout"]
+        app, ["plan", "Add caching", "--repo", str(tmp_path), "--stub", "--stdout"]
     )
     assert result.exit_code == 0
     assert "# Add caching" in result.stdout
@@ -60,7 +61,7 @@ def test_plan_stdout(tmp_path: Path) -> None:
 
 
 def test_plan_requires_a_request(tmp_path: Path) -> None:
-    result = runner.invoke(app, ["plan", "--repo", str(tmp_path)])
+    result = runner.invoke(app, ["plan", "--repo", str(tmp_path), "--stub"])
     assert result.exit_code == 1
 
 
@@ -68,7 +69,18 @@ def test_plan_request_file(tmp_path: Path) -> None:
     req = tmp_path / "feature.md"
     req.write_text("Add soft-delete and restore endpoints", encoding="utf-8")
     result = runner.invoke(
-        app, ["plan", "--repo", str(tmp_path), "--request-file", str(req)]
+        app, ["plan", "--repo", str(tmp_path), "--request-file", str(req), "--stub"]
     )
     assert result.exit_code == 0, result.stdout
     assert list((tmp_path / "plans").glob("*.md"))
+
+
+def test_plan_unknown_provider_errors(tmp_path: Path) -> None:
+    # Error text goes to stderr (Rich err_console); the message itself is
+    # asserted at the service layer in test_providers. Here we just confirm the
+    # CLI surfaces an unknown provider as a clean non-zero exit, not a traceback.
+    result = runner.invoke(
+        app, ["plan", "Add x", "--repo", str(tmp_path), "--provider", "nope"]
+    )
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)

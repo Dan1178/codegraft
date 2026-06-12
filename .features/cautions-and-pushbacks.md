@@ -29,16 +29,17 @@ contract is the point. When the real provider call lands:
   is solid.
 
 ## 3. The ChatGPT research citations are unverifiable
-**Status: open — verify at Phase 4, don't trust blindly.**
+**Status: RESOLVED (Phase 4).**
 
-The `turn8view8`-style citations are deep-research artifacts I can't check. The
-load-bearing one is **"Anthropic supports schema-constrained structured
-outputs."**
+The load-bearing claim — "Anthropic supports schema-constrained structured
+outputs" — was **confirmed** against the authoritative claude-api skill: real
+support via `client.messages.parse(output_format=<Pydantic model>)` →
+`.parsed_output`. No JSON-mode fallback was needed; the architecture held.
 
-- Confirm the *actual* current Anthropic API capability before building the
-  provider (use the claude-api skill / live docs, not the report's claim).
-- The architecture survives either way: worst case we fall back to tool-use /
-  JSON mode to get a validated `ImplementationPlan`.
+Implementation note: the strict schema forces the model to emit all fields,
+including `metadata` — so codegraft **overwrites** `plan.metadata` after parsing
+(the model is told to leave it empty, but provenance is authored by us
+regardless). Other ChatGPT citations remain unverified but are non-load-bearing.
 
 ## 4. Windows / cross-platform reality
 **Status: partially handled — stay vigilant.**
