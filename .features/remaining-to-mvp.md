@@ -90,7 +90,24 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
 - [x] `RepoAnalysis.ranking_signal` exposed; tests for signal + snapshot + cell-escape
       (`tests/test_text.py`, `test_renderer.py`) — 62 passing, 1 opt-in skipped
 
-### Phase 6 — OpenAI provider & portfolio polish ⬜  *(next)*
+### Mini-feature — Estimated token savings ⬜  *(next; small, ~1–2h)*
+Quantify the selective-context thesis: how many tokens codegraft *avoided*
+sending by shipping a bounded bundle instead of the whole candidate set.
+- [ ] `utils/tokens.py`: `estimate_tokens(chars)` heuristic (~4 chars/token,
+      clearly labelled an estimate — NOT tiktoken, which is OpenAI's tokenizer
+      and wrong for Claude; optional future: Anthropic `count_tokens` for accuracy)
+- [ ] Compute on a `RepoAnalysis`: baseline = Σ candidate-file chars (the naive
+      "dump the repo" alternative) vs bundle = `context_chars`; report
+      `saved = baseline − bundle` and `% reduction`
+- [ ] Surface in `inspect` (one line) and in the plan's Generation Metadata
+      section / `--json`
+- [ ] Test: deterministic estimate + savings math (`tests/test_tokens.py`)
+- Why small: sizes already live on `RepoScan.files.size_bytes` and bundle size on
+  `RepoAnalysis.context_chars`; only the estimator + display are new.
+- Related: see `test-plan.md` §2c; complements the deferred anti-hallucination
+  gate (§2b #2) as a concrete output-quality/value metric.
+
+### Phase 6 — OpenAI provider & portfolio polish ⬜
 - [ ] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`)
 - [ ] Debug artifacts: selected files + raw plan JSON (`plans/_debug/`)
 - [ ] `--json` / `--debug-context` output options
