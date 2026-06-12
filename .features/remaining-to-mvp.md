@@ -39,20 +39,27 @@ Legend: ✅ done · 🟡 doing · ⬜ todo
 - Note: `extra_excludes` now covers only vendor/build dirs; `safety.py` is the
   single authority for secrets (keeps skip reasons accurate).
 
-### Phase 3 — Repo summary, ranking, snippets ⬜  *(next)*
-- [ ] Compact depth-limited directory tree (`repo/tree.py`)
-- [ ] Language/framework/manifest/entry-point detection (`repo/detect.py`)
-- [ ] Repo summary assembly (`repo/summarize.py`)
-- [ ] Deterministic relevant-file ranking (`repo/rank.py`):
-      path/keyword/symbol overlap + role boosts + manifest/entry proximity +
-      test-convention boost − noise/oversize penalty + diversity penalty
-- [ ] Bounded snippet extraction under budget (`repo/snippets.py`)
-- [ ] **Real `inspect` command**: print ranked files + scores (no model call)
-- [ ] Large-repo graceful degradation (<500 normal / 500–2500 medium / >2500 warn + `--subdir`)
-- [ ] Tests: ranking sanity on fixtures, snippet budget enforcement
-      (`tests/test_rank.py`, `test_snippets.py`)
+### Phase 3 — Repo summary, ranking, snippets ✅
+- [x] Compact depth-limited directory tree (`repo/tree.py`)
+- [x] Language/framework/manifest/entry-point detection (`repo/detect.py`)
+- [x] Repo summary assembly + scale-mode (`repo/summarize.py`)
+- [x] Deterministic **two-stage** relevant-file ranking (`repo/rank.py`):
+      cheap path/role/structure pass over all files → content+symbol pass on top
+      candidates → diversity penalty (capped). Explainable `signals` per file.
+- [x] Reusable keyword/identifier tokenizer (`utils/text.py`)
+- [x] Bounded snippet extraction under char + per-file-line budget (`repo/snippets.py`)
+- [x] **Real `inspect` command**: summary panel + scored ranked table + snippet
+      stats; `--subdir`, `--snippets` flags
+- [x] Single analysis entry point (`repo/analyze.py` → `RepoAnalysis`) reused by Phase 4
+- [x] Large-repo graceful degradation (normal/medium/large mode, warn + `--subdir`)
+- [x] Tests: ranking sanity, content-only + doc-codeblock regressions, snippet
+      budget, detection/tree (`tests/test_rank.py`, `test_snippets.py`, `test_detect.py`)
+      — 43 passing total
+- Ranking tuned against codegraft's own `inspect` output; fixed two real bugs the
+  surface exposed (symbol-scoring on doc code blocks; content-only files dropped
+  before content read). See `cautions-and-pushbacks.md` #1.
 
-### Phase 4 — Anthropic planning core ⬜
+### Phase 4 — Anthropic planning core ⬜  *(next)*
 - [ ] **Verify Anthropic structured-output API for real** (see cautions #3)
 - [ ] `PlanProvider` protocol (`providers/base.py`)
 - [ ] Anthropic provider (`providers/anthropic_provider.py`)

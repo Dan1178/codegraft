@@ -58,8 +58,12 @@ repo path + request
 2. ✅ **Discovery & ignore engine** — git ls-files (tracked/untracked), PathSpec
    nested-gitignore fallback, safety denylist (secrets/binaries/oversized),
    typed `RepoScan`, real `inspect` discovery preview, 27 passing tests. **Done.**
-3. ⬜ **Repo summary, ranking, snippet extraction**; richer `inspect` — *next.*
-4. ⬜ Anthropic provider + prompt assembly + structured output → `ImplementationPlan`.
+3. ✅ **Repo summary, ranking, snippet extraction** — compact tree, language/
+   framework detection, two-stage explainable ranking, bounded snippets,
+   `analyze_repo` entry point, scored `inspect` with `--subdir`/`--snippets`,
+   43 passing tests. **Done.**
+4. ⬜ **Anthropic provider** + prompt assembly + structured output →
+   `ImplementationPlan` (consumes `RepoAnalysis` from `repo/analyze.py`) — *next.*
 5. ⬜ Markdown rendering polish + per-phase handoff prompts.
 6. ⬜ OpenAI provider + portfolio polish (README, demo, screenshots).
 

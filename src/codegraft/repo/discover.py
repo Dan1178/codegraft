@@ -25,8 +25,13 @@ from codegraft.repo.git_scan import git_scan
 from codegraft.repo.ignore import filesystem_scan
 
 
-def discover_repo(root: Path, config: Config) -> RepoScan:
-    """Scan *root* and return a filtered, typed :class:`RepoScan`."""
+def discover_repo(root: Path, config: Config, subdir: str | None = None) -> RepoScan:
+    """Scan *root* and return a filtered, typed :class:`RepoScan`.
+
+    If *subdir* is given, only candidates under that repo-relative directory are
+    kept — and the expensive per-file stat/binary-sniff is skipped for everything
+    outside it, which is the point of scoping a large monorepo.
+    """
 
     root = root.resolve()
     if not root.is_dir():
@@ -35,6 +40,15 @@ def discover_repo(root: Path, config: Config) -> RepoScan:
     extra_spec = PathSpec.from_lines("gitignore", config.repo.extra_excludes)
 
     candidates, used_git = _candidates(root, config)
+    if subdir:
+        prefix = subdir.replace("\\", "/").strip("/")
+        if not (root / prefix).is_dir():
+            raise RepoError(f"--subdir not found in repo: {prefix}")
+        candidates = [
+            (rel, tracked)
+            for rel, tracked in candidates
+            if rel == prefix or rel.startswith(prefix + "/")
+        ]
 
     files: list[RepoFile] = []
     skipped: list[SkippedFile] = []

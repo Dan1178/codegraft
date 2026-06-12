@@ -95,54 +95,101 @@ def init(
 @app.command()
 def inspect(
     request: str = typer.Argument(
-        None, help="Feature request (used for ranking in Phase 3)."
+        None, help="Feature request to rank files for. Omit to show summary only."
     ),
     repo: Path = typer.Option(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
-    limit: int = typer.Option(20, "--limit", help="How many discovered files to list."),
+    subdir: Optional[str] = typer.Option(
+        None, "--subdir", help="Scope analysis to a repo-relative subdirectory."
+    ),
+    snippets: bool = typer.Option(
+        False, "--snippets", help="Also print the extracted context snippets."
+    ),
 ) -> None:
-    """Preview what codegraft sees in a repo (no model call).
+    """Preview what codegraft sees and ranks for a request (no model call).
 
-    Phase 2: shows discovery results — candidate files, skip reasons, and whether
-    git or the filesystem fallback was used. Relevance ranking arrives in Phase 3.
+    With a request, this is the ranking/tuning surface: repo summary, the
+    deterministically-ranked files with their score breakdown, and the bounded
+    context snippets that would be sent to a provider.
     """
 
     from rich.table import Table
 
-    from codegraft.repo.discover import discover_repo
+    from codegraft.repo.analyze import analyze_repo
 
     try:
         config = Config.load(repo)
-        scan = discover_repo(repo, config)
+        analysis = analyze_repo(request or "", repo, config, subdir=subdir)
     except CodegraftError as exc:
         err_console.print(f"[red]error:[/red] {exc}")
         raise typer.Exit(code=1)
 
+    scan, summary = analysis.scan, analysis.summary
     console.print(BANNER)
+
     source = "git ls-files" if scan.used_git else "filesystem walk (no git)"
+    scope = f"  Subdir: [bold]{subdir}[/bold]" if subdir else ""
     console.print(
-        f"\nRepo: {scan.root}\nDiscovery: [bold]{source}[/bold]  "
-        f"Kept: [green]{scan.file_count}[/green]  Skipped: [yellow]{len(scan.skipped)}[/yellow]"
-        + ("  [red](candidate list truncated)[/red]" if scan.truncated else "")
+        f"\nRepo: {scan.root}{scope}\n"
+        f"Discovery: [bold]{source}[/bold]  Kept: [green]{scan.file_count}[/green]  "
+        f"Skipped: [yellow]{len(scan.skipped)}[/yellow]  "
+        f"Mode: [bold]{summary.mode}[/bold]"
+        + ("  [red](truncated)[/red]" if scan.truncated else "")
     )
-    if request:
-        console.print(f"Request: [italic]{request}[/italic] "
-                      "[dim](ranking lands in Phase 3)[/dim]")
+    if summary.mode == "large":
+        console.print(
+            "[yellow]Large repo[/yellow] — ranking is conservative; "
+            "consider scoping with [bold]--subdir[/bold]."
+        )
 
-    skip_counts = scan.skipped_by_reason()
-    if skip_counts:
-        summary = "  ".join(f"{reason}={n}" for reason, n in sorted(skip_counts.items()))
-        console.print(f"[dim]Skips by reason:[/dim] {summary}")
+    lang_mix = "  ".join(f"{lang}={n}" for lang, n in list(summary.languages.items())[:6])
+    console.print(
+        f"[dim]Primary:[/dim] {summary.primary_language or '—'}   "
+        f"[dim]Frameworks:[/dim] {', '.join(summary.frameworks) or '—'}\n"
+        f"[dim]Languages:[/dim] {lang_mix or '—'}\n"
+        f"[dim]Manifests:[/dim] {', '.join(summary.manifests[:6]) or '—'}\n"
+        f"[dim]Entry points:[/dim] {', '.join(summary.entry_points[:6]) or '—'}"
+    )
 
-    table = Table(title=f"First {min(limit, scan.file_count)} candidate files")
+    if not request:
+        console.print(
+            "\n[dim]Pass a feature request to see ranked files, e.g.:[/dim]\n"
+            '  codegraft inspect "add role-based access control"'
+        )
+        return
+
+    if not analysis.ranked:
+        console.print(
+            f"\n[yellow]No files ranked[/yellow] for: [italic]{request}[/italic]\n"
+            "[dim]Try more specific keywords, or widen --subdir.[/dim]"
+        )
+        return
+
+    table = Table(title=f"Ranked files for: {request}")
+    table.add_column("#", justify="right")
+    table.add_column("Score", justify="right")
     table.add_column("Path", overflow="fold")
-    table.add_column("Bytes", justify="right")
-    table.add_column("Tracked", justify="center")
-    for f in scan.files[:limit]:
-        table.add_row(f.path, str(f.size_bytes), "yes" if f.tracked else "no")
+    table.add_column("Signals", overflow="fold")
+    for i, r in enumerate(analysis.ranked, 1):
+        signals = "  ".join(
+            f"{k}={v:+.1f}" for k, v in sorted(r.signals.items(), key=lambda kv: -abs(kv[1]))
+        )
+        table.add_row(str(i), f"{r.score:.1f}", r.path, signals)
     console.print(table)
+    console.print(
+        f"[dim]Context bundle:[/dim] {len(analysis.snippets)} snippets, "
+        f"{analysis.context_chars} chars "
+        f"(budget {config.analysis.context_char_budget})"
+    )
+
+    if snippets:
+        for s in analysis.snippets:
+            console.print(f"\n[bold cyan]{s.path}[/bold cyan] "
+                          f"[dim]({s.line_count} lines"
+                          + (", truncated" if s.truncated else "") + ")[/dim]")
+            console.print(s.content)
 
 
 @app.command()

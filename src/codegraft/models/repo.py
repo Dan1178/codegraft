@@ -59,3 +59,65 @@ class RepoScan(BaseModel):
         for item in self.skipped:
             counts[item.reason] = counts.get(item.reason, 0) + 1
         return counts
+
+
+class RepoSummary(BaseModel):
+    """Compact, model-free characterization of a repository.
+
+    This is the "what kind of codebase is this" answer that gets handed to the
+    planning model alongside ranked files and snippets.
+    """
+
+    root: str = Field(description="Absolute repository root.")
+    file_count: int = Field(description="Number of analysis-candidate files.")
+    mode: str = Field(
+        default="normal",
+        description="Scale mode: normal | medium | large (drives stricter caps).",
+    )
+    primary_language: str = Field(
+        default="", description="Best-guess primary language."
+    )
+    languages: dict[str, int] = Field(
+        default_factory=dict, description="File count per detected language."
+    )
+    manifests: list[str] = Field(
+        default_factory=list, description="Root/build manifest files found."
+    )
+    frameworks: list[str] = Field(
+        default_factory=list, description="Detected frameworks/libraries."
+    )
+    entry_points: list[str] = Field(
+        default_factory=list, description="Likely application entry-point files."
+    )
+    test_paths: list[str] = Field(
+        default_factory=list, description="Directories/files that look like tests."
+    )
+    directory_tree: str = Field(
+        default="", description="Compact, depth-limited directory tree."
+    )
+
+
+class RankedFile(BaseModel):
+    """A candidate file with its relevance score and a signal breakdown.
+
+    The `signals` map is what makes ranking *explainable* — `inspect` renders it
+    so weak ranking is visible and tunable instead of a black box.
+    """
+
+    path: str = Field(description="Repo-relative path.")
+    score: float = Field(description="Total relevance score (higher = more relevant).")
+    signals: dict[str, float] = Field(
+        default_factory=dict, description="Per-component score contributions."
+    )
+
+
+class Snippet(BaseModel):
+    """A bounded slice of a file's content selected as planning evidence."""
+
+    path: str = Field(description="Repo-relative path the snippet came from.")
+    content: str = Field(description="The extracted snippet text.")
+    line_count: int = Field(description="Number of lines in the snippet.")
+    char_count: int = Field(description="Number of characters in the snippet.")
+    truncated: bool = Field(
+        default=False, description="True if the file was longer than the line cap."
+    )
