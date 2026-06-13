@@ -16,9 +16,29 @@ separators so filenames with spaces, quotes, or unicode survive intact (no
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
+
+# Never let git block on input or prompt for credentials. This matters most when
+# codegraft runs inside an MCP stdio server: there the process's stdin IS the
+# JSON-RPC protocol pipe, so a child git process that inherits stdin (or prompts
+# for a credential) can hang the entire tool call indefinitely. DEVNULL stdin +
+# these env vars make git fail fast instead of blocking.
+_GIT_ENV = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_OPTIONAL_LOCKS": "0"}
+
+
+def _run_git(args: list[str], timeout: int) -> subprocess.CompletedProcess:
+    """Run a git command with stdin detached and prompts disabled."""
+
+    return subprocess.run(
+        ["git", *args],
+        capture_output=True,
+        stdin=subprocess.DEVNULL,
+        env=_GIT_ENV,
+        timeout=timeout,
+    )
 
 
 def git_available() -> bool:
@@ -31,11 +51,7 @@ def is_git_worktree(root: Path) -> bool:
     """True if *root* is inside a git working tree."""
 
     try:
-        result = subprocess.run(
-            ["git", "-C", str(root), "rev-parse", "--is-inside-work-tree"],
-            capture_output=True,
-            timeout=15,
-        )
+        result = _run_git(["-C", str(root), "rev-parse", "--is-inside-work-tree"], timeout=15)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0 and result.stdout.strip() == b"true"
@@ -44,8 +60,9 @@ def is_git_worktree(root: Path) -> bool:
 def _run_ls_files(root: Path, extra_args: list[str]) -> set[str]:
     """Run ``git ls-files`` with NUL output and return a set of relative paths."""
 
-    cmd = ["git", "-C", str(root), "ls-files", "--full-name", "-z", *extra_args]
-    result = subprocess.run(cmd, capture_output=True, timeout=120)
+    result = _run_git(
+        ["-C", str(root), "ls-files", "--full-name", "-z", *extra_args], timeout=120
+    )
     if result.returncode != 0:
         # Surface as "no result"; the caller falls back to the filesystem walk.
         raise subprocess.SubprocessError(
