@@ -61,6 +61,9 @@ class AnalysisConfig(BaseModel):
     always_include_manifests: bool = True
     include_tests_when_relevant: bool = True
     context_char_budget: int = 50_000
+    # Boost files imported by already-relevant files (architectural centrality).
+    # Exposed mainly so `codegraft eval --ablation` can measure its contribution.
+    use_import_edge: bool = True
 
 
 class OutputConfig(BaseModel):
@@ -142,6 +145,7 @@ max_snippet_lines_per_file = 160
 always_include_manifests = true
 include_tests_when_relevant = true
 context_char_budget = 50000
+use_import_edge = true
 
 [output]
 output_dir = "plans"

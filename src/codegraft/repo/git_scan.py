@@ -77,6 +77,61 @@ def _run_ls_files(root: Path, extra_args: list[str]) -> set[str]:
     }
 
 
+def recent_commit_shas(root: Path, n: int) -> list[str]:
+    """The most recent *n* commit SHAs (newest first), excluding merge commits.
+
+    Merges are skipped (``--no-merges``) because ``diff-tree`` reports no files
+    for them by default, so they carry no usable gold set for evaluation.
+    """
+
+    result = _run_git(
+        ["-C", str(root), "log", "--no-merges", f"-n{n}", "--format=%H"], timeout=30
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            result.stderr.decode("utf-8", "replace").strip() or "git log failed"
+        )
+    return [line for line in result.stdout.decode("utf-8", "replace").split("\n") if line]
+
+
+def commit_subject(root: Path, sha: str) -> str:
+    """The subject line (first line of the message) of *sha* — used as the request."""
+
+    result = _run_git(
+        ["-C", str(root), "show", "-s", "--format=%s", sha], timeout=30
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            result.stderr.decode("utf-8", "replace").strip() or f"git show {sha} failed"
+        )
+    return result.stdout.decode("utf-8", "replace").strip()
+
+
+def commit_changed_files(root: Path, sha: str) -> set[str]:
+    """Repo-relative paths changed by *sha* (the gold set for evaluation).
+
+    ``--root`` makes the initial commit report its files; ``-z`` keeps paths with
+    spaces/unicode intact and matches the forward-slash, root-relative form used
+    everywhere else in codegraft.
+    """
+
+    result = _run_git(
+        ["-C", str(root), "diff-tree", "--no-commit-id", "--name-only", "-r",
+         "--root", "-z", sha],
+        timeout=30,
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            result.stderr.decode("utf-8", "replace").strip()
+            or f"git diff-tree {sha} failed"
+        )
+    return {
+        chunk.decode("utf-8", "surrogateescape")
+        for chunk in result.stdout.split(b"\0")
+        if chunk
+    }
+
+
 def git_scan(root: Path) -> tuple[set[str], set[str]] | None:
     """Discover files via git.
 
