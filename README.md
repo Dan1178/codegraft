@@ -49,6 +49,10 @@ codegraft inspect "Add RBAC to admin routes" --repo .
 
 # Generate a real plan via Anthropic:
 codegraft plan "Add RBAC to admin routes" --repo .
+
+# Measure how well ranking surfaces the right files, using your own git
+# history as the answer key — no API call, no key needed:
+codegraft eval --last 20 --ablation
 ```
 
 The plan lands in `plans/<date>-<slug>.md`. No key yet? `codegraft plan --stub`
@@ -154,6 +158,39 @@ Two tools:
 
 The server is a thin adapter over the same `analyze_repo` engine the CLI uses —
 one core, three interfaces (CLI, MCP, LLM providers).
+
+### Make the agent reach for it automatically
+
+Registering the server gives the agent the *tools*; one instruction makes it
+*use* them at the right moment. Drop this into the agent's system prompt or a
+`CLAUDE.md` (project or global) so it leads with context instead of blind
+grepping:
+
+> When asked to plan or implement a feature, fix, or change in a local repo,
+> call the codegraft MCP tool `select_context` **first** — before manually
+> grepping or reading files — to get the ranked-relevant files and bounded
+> snippets. It's deterministic, needs no API key, and has no per-request token
+> cost. Skip it only for trivial single-file changes you can already locate.
+
+Or install the packaged **Claude Code skill** instead of pasting that by hand —
+it carries the same trigger and workflow, so the agent reaches for
+`select_context` on its own:
+
+```bash
+# global (all repos):
+cp -r skills/codegraft-context ~/.claude/skills/
+# or per-project:  cp -r skills/codegraft-context <your-repo>/.claude/skills/
+```
+
+For MCP clients other than Claude Code, point them at the same stdio command:
+
+```json
+{
+  "mcpServers": {
+    "codegraft": { "command": "codegraft-mcp" }
+  }
+}
+```
 
 ## Architecture notes
 
