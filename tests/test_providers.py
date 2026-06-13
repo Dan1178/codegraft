@@ -79,6 +79,15 @@ def test_prompt_includes_evidence() -> None:
     assert "<directory_tree>" in user and "app.py" in user
 
 
+def test_prompt_favours_goal_over_structure_and_reuse() -> None:
+    # Guards the planning-prompt change: plans should describe goals and prefer
+    # reuse, not dictate internal structure (see the MeshiMate A/B finding).
+    system, _ = build_planning_prompt(_request())
+    lowered = system.lower()
+    assert "goal" in lowered and "internal structure" in lowered
+    assert "unifying with it" in lowered or "prefer extending or unifying" in lowered
+
+
 # --- Anthropic provider (mocked) ------------------------------------------
 
 def test_provider_returns_parsed_plan() -> None:

@@ -16,6 +16,12 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   is visible and tunable.
 - When ranking feels bad, fix heuristics + debug output **before** reaching for
   LLM reranking or embeddings (the latter is explicitly out of V1 scope).
+- **Concrete gap found in the field** (see `experiment-meshimate-ab.md`): the
+  most central file to a task can be missed when it's the *shared* dependency the
+  request keywords don't name (the wrapper screens ranked; the
+  `TaxonomyManagementScreen` they all import did not). Candidate fix: an
+  **import-graph proximity boost** — if several top-ranked files import X, pull X
+  into the bundle. Open.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**
