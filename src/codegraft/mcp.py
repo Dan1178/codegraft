@@ -91,11 +91,13 @@ def build_server() -> Any:
     def select_context(
         request: str, repo: str = ".", subdir: str | None = None
     ) -> dict[str, Any]:
-        """Rank the files relevant to a feature request in a local repo and return
-        bounded code snippets — a deterministic context bundle. No LLM call, no API
-        key, no per-request cost. Use this to get the right files for a coding task
-        fast, then plan/implement from them. `repo` is a local path; optional
-        `subdir` scopes a large repo."""
+        """Call this FIRST when asked to plan or implement a feature, fix, or change
+        in a repository — before manually grepping or reading files. Returns the most
+        relevant files (ranked, with a score breakdown) plus bounded code snippets for
+        the request, so you start from the right context instead of exploring blind.
+        Deterministic: no LLM call, no API key, no per-request cost. `repo` is a local
+        path (prefer an absolute path); `subdir` scopes a large repo. Skip only for
+        trivial single-file changes you can already locate."""
 
         return select_context_payload(request, repo, subdir)
 
