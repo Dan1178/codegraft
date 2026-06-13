@@ -26,6 +26,11 @@ codegraft --help
 codegraft init
 codegraft plan "Add RBAC to admin routes" --repo .
 
+# Measure ranking quality against real git history (no model call). Read the
+# *delta* (e.g. --ablation), not the absolute score. Use it to validate any
+# change to repo/rank.py before trusting a single-case A/B.
+codegraft eval --last 20 --ablation --k 12
+
 # Tests
 pytest                  # all deterministic + mocked tests
 pytest -m live_anthropic  # opt-in, hits the real API (needs ANTHROPIC_API_KEY)
