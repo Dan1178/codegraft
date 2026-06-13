@@ -182,10 +182,22 @@ def test_imported_central_file_is_pulled_in(tmp_path: Path) -> None:
     shared = "src/features/taxonomy/screens/TaxonomyManagementScreen.tsx"
     assert shared in ranked, "shared screen should be pulled in by its importers"
     signals = ranked[shared].signals
-    # Imported by all three wrappers; the boost is capped at IMPORTED_BY_CAP.
-    assert signals.get("imported_by") == 6.0
+    # Imported by all three wrappers (within the ubiquity gate): 3 * W_IMPORTED_BY.
+    assert signals.get("imported_by") == 4.5
     # The new signal still obeys the explainability invariant.
     assert abs(sum(signals.values()) - ranked[shared].score) < 1e-6
+
+
+def test_import_edge_can_be_disabled(tmp_path: Path) -> None:
+    """The ablation toggle removes the signal entirely (eval --no-import-edge)."""
+
+    _taxonomy_repo(tmp_path)
+    config = _config(tmp_path)
+    config.analysis.use_import_edge = False
+    request = "add categories, tags, and components from the settings screen"
+    ranked = analyze_repo(request, tmp_path, config).ranked
+
+    assert all("imported_by" not in r.signals for r in ranked)
 
 
 def test_summary_detects_stack(tmp_path: Path) -> None:

@@ -297,6 +297,155 @@ def plan(
         raise typer.Exit(code=1)
 
 
+@app.command("eval")
+def evaluate(
+    commits: Optional[list[str]] = typer.Argument(
+        None, help="Commit SHAs to evaluate. Omit to use recent history."
+    ),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to evaluate.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    last: int = typer.Option(
+        0, "--last", help="Evaluate the most recent N commits (default 10 if no SHAs)."
+    ),
+    k: int = typer.Option(10, "--k", help="Rank cutoff for recall@k."),
+    no_import_edge: bool = typer.Option(
+        False, "--no-import-edge", help="Disable the import-edge ranking signal."
+    ),
+    ablation: bool = typer.Option(
+        False, "--ablation",
+        help="Score with and without the import-edge signal and show the delta.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
+) -> None:
+    """Score ranking accuracy against real git history (recall@k, MRR). No model call.
+
+    Each commit's subject becomes a request and its changed source files become
+    the gold set; this measures how well `inspect` would have surfaced them.
+    """
+
+    import subprocess
+
+    from codegraft.evaluation import resolve_commits, run_eval
+
+    try:
+        config = Config.load(repo)
+        shas = resolve_commits(repo, commits, last)
+        if not shas:
+            raise CodegraftError("no commits to evaluate")
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+    except (subprocess.SubprocessError, OSError) as exc:
+        err_console.print(
+            f"[red]error:[/red] could not read git history "
+            f"(is {repo} a git repository?): {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    try:
+        if ablation:
+            on = run_eval(repo, config, shas, k=k, use_import_edge=True)
+            off = run_eval(repo, config, shas, k=k, use_import_edge=False)
+        else:
+            report = run_eval(
+                repo, config, shas, k=k, use_import_edge=not no_import_edge
+            )
+    except (subprocess.SubprocessError, OSError) as exc:
+        err_console.print(f"[red]error:[/red] git failed while evaluating: {exc}")
+        raise typer.Exit(code=1)
+
+    if ablation:
+        if as_json:
+            typer.echo(_eval_json(on, off))
+            return
+        _print_eval_report(on)
+        _print_ablation_delta(on, off)
+    else:
+        if as_json:
+            typer.echo(_eval_json(report))
+            return
+        _print_eval_report(report)
+
+
+def _print_eval_report(report) -> None:
+    """Render an EvalReport as a per-commit table plus aggregates."""
+
+    from rich.table import Table
+
+    console.print(BANNER)
+    edge = "on" if report.use_import_edge else "off"
+    table = Table(title=f"Ranking eval  (k={report.k}, import-edge {edge})")
+    table.add_column("#", justify="right")
+    table.add_column("Commit")
+    table.add_column(f"Recall@{report.k}", justify="right")
+    table.add_column("1st", justify="right")
+    table.add_column("Found/Gold", justify="right")
+    table.add_column("Subject", overflow="fold")
+    for i, c in enumerate(report.cases, 1):
+        if not c.evaluable:
+            table.add_row(str(i), c.sha[:7], "[dim]—[/dim]", "—", "0/0",
+                          f"[dim]{c.subject}  (no source files)[/dim]")
+            continue
+        rank = str(c.first_rank) if c.first_rank else "—"
+        recall = f"{c.recall_at_k:.2f}"
+        table.add_row(str(i), c.sha[:7], recall, rank,
+                      f"{c.found}/{c.gold_total}", c.subject)
+    console.print(table)
+
+    scored = report.scored
+    console.print(
+        f"[bold]{len(scored)}[/bold] scored / {len(report.cases)} commits   "
+        f"[dim]mean[/dim] Recall@{report.k}=[green]{report.mean_recall_at_k:.3f}[/green]   "
+        f"MRR=[green]{report.mean_reciprocal_rank:.3f}[/green]"
+    )
+
+
+def _print_ablation_delta(on, off) -> None:
+    """Print the with/without-import-edge comparison — the headline ablation."""
+
+    d_recall = on.mean_recall_at_k - off.mean_recall_at_k
+    d_mrr = on.mean_reciprocal_rank - off.mean_reciprocal_rank
+    console.print(
+        f"\n[bold]Import-edge ablation[/bold] (k={on.k}, {len(on.scored)} scored):\n"
+        f"  with    edge:  Recall@{on.k}=[green]{on.mean_recall_at_k:.3f}[/green]  "
+        f"MRR=[green]{on.mean_reciprocal_rank:.3f}[/green]\n"
+        f"  without edge:  Recall@{off.k}={off.mean_recall_at_k:.3f}  "
+        f"MRR={off.mean_reciprocal_rank:.3f}\n"
+        f"  [bold]delta[/bold]:        Recall@{on.k}=[cyan]{d_recall:+.3f}[/cyan]  "
+        f"MRR=[cyan]{d_mrr:+.3f}[/cyan]"
+    )
+
+
+def _eval_json(report, ablation_off=None) -> str:
+    """Serialize one or two EvalReports (the second is the ablation-off run)."""
+
+    import json
+    from dataclasses import asdict
+
+    def as_dict(rep) -> dict:
+        return {
+            "k": rep.k,
+            "use_import_edge": rep.use_import_edge,
+            "mean_recall_at_k": rep.mean_recall_at_k,
+            "mean_reciprocal_rank": rep.mean_reciprocal_rank,
+            "scored": len(rep.scored),
+            "commits": len(rep.cases),
+            "cases": [asdict(c) for c in rep.cases],
+        }
+
+    payload: dict = {"report": as_dict(report)}
+    if ablation_off is not None:
+        payload["ablation_off"] = as_dict(ablation_off)
+        payload["delta"] = {
+            "mean_recall_at_k": report.mean_recall_at_k - ablation_off.mean_recall_at_k,
+            "mean_reciprocal_rank": report.mean_reciprocal_rank
+            - ablation_off.mean_reciprocal_rank,
+        }
+    return json.dumps(payload, indent=2)
+
+
 def _read_request(
     request: Optional[str], request_file: Optional[Path], *, required: bool
 ) -> Optional[str]:

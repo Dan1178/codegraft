@@ -47,8 +47,15 @@ W_SYMBOL = 4.0           # per keyword matching a defined symbol name
 ROOT_PROXIMITY = 1.0     # shallow files are slightly more likely to matter
 DIVERSITY_PENALTY = 1.5  # subtracted per already-selected file in same dir...
 DIVERSITY_PENALTY_CAP = 3  # ...but capped, so a single-folder scope isn't crushed
-W_IMPORTED_BY = 2.0      # per relevant file that imports this one (centrality)...
-IMPORTED_BY_CAP = 3      # ...capped, so a ubiquitous util can't dominate on edges
+# Import-edge signal. A file imported by a few *highly relevant* files is likely
+# a feature-specific shared module worth surfacing (e.g. a shared screen behind
+# thin keyword-named wrappers). A file imported by *many* files is a ubiquitous
+# utility (config, theme, base classes) — and commits rarely change those, so
+# boosting them just evicts the actually-relevant files. The eval harness showed
+# the naive version hurt recall; these bounds make the signal discriminative.
+W_IMPORTED_BY = 1.5          # per relevant importer (after the ubiquity gate)
+IMPORTED_BY_UBIQUITY_MAX = 3  # more relevant importers than this ⇒ hub, not boosted
+_EDGE_IMPORTER_LIMIT = 15    # only edges from the N most-relevant files count
 
 # Architectural role hints keyed by path segment.
 _ROLE_WEIGHTS: dict[str, float] = {
@@ -300,12 +307,13 @@ def rank_files(
     # (path-only) score, which is the documented large-repo tradeoff. We read
     # each file once and reuse the text for both content signals and the
     # import-edge tally below.
+    use_import_edge = config.analysis.use_import_edge
     all_paths, by_basename = _build_path_index(scan.files)
     ranked_by_path = {r.path: r for r in stage1}
     import_counts: dict[str, int] = {}
 
     stage2_limit = _STAGE2_LIMIT.get(summary.mode, 50)
-    for ranked in stage1[:stage2_limit]:
+    for importer_rank, ranked in enumerate(stage1[:stage2_limit]):
         text = _read_head(root / ranked.path, config.repo.max_file_lines)
         if text is None:
             continue
@@ -313,19 +321,24 @@ def rank_files(
         if extra:
             ranked.signals.update(extra)
             ranked.score += sum(extra.values())
-        for ref in _referenced_paths(text, ranked.path, all_paths, by_basename):
-            import_counts[ref] = import_counts.get(ref, 0) + 1
+        # Only edges from the most-relevant files inform centrality; a far-down
+        # candidate importing a file says little about that file's relevance.
+        if use_import_edge and importer_rank < _EDGE_IMPORTER_LIMIT:
+            for ref in _referenced_paths(text, ranked.path, all_paths, by_basename):
+                import_counts[ref] = import_counts.get(ref, 0) + 1
 
-    # Import-edge signal: a file imported by the relevant files we just read is
-    # likely architecturally central even when its own name carries no request
-    # keyword (e.g. a shared screen behind thin keyword-named wrappers). This is
-    # a lightweight reference scan, not an AST — only files we actually read can
-    # contribute edges, which keeps it bounded.
+    # Apply the import-edge boost, but only to files imported by a *handful* of
+    # relevant files. A file imported by more than IMPORTED_BY_UBIQUITY_MAX of
+    # them is a ubiquitous utility, and boosting it evicts the files a feature
+    # change actually touches (the eval harness measured this regression). This
+    # is a lightweight reference scan, not an AST. Toggleable for `eval --ablation`.
     for path, count in import_counts.items():
+        if count > IMPORTED_BY_UBIQUITY_MAX:
+            continue
         target = ranked_by_path.get(path)
         if target is None:
             continue
-        boost = min(count, IMPORTED_BY_CAP) * W_IMPORTED_BY
+        boost = count * W_IMPORTED_BY
         target.signals["imported_by"] = boost
         target.score += boost
 

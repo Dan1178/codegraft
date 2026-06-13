@@ -87,9 +87,30 @@ Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 candidate files — ~46,6
 | `codegraft init` | Write a default `codegraft.toml`; report required env keys. |
 | `codegraft inspect "<request>"` | Preview ranked files, score breakdown, snippets, token estimate (no model call). |
 | `codegraft plan "<request>"` | Generate a plan and write it to `plans/`. |
+| `codegraft eval` | Score ranking accuracy (recall@k / MRR) against your real git history — no model call. |
 
 Useful flags: `--repo`, `--subdir`, `--request-file`, `--provider anthropic|openai`,
-`--model`, `--stdout`, `--json`, `--dry-run`, `--stub` (plan), `--snippets` (inspect).
+`--model`, `--stdout`, `--json`, `--dry-run`, `--stub` (plan), `--snippets` (inspect),
+`--last N`, `--k`, `--ablation`, `--no-import-edge` (eval).
+
+### Measuring ranking quality — `codegraft eval`
+
+How good is `inspect` at surfacing the *right* files? `eval` answers that
+deterministically, with no API call: it turns your git history into a benchmark
+— each commit's subject is the request, the files it changed are the gold set —
+and reports **recall@k** (did the changed files land in the top-k bundle?) and
+**MRR** (how high did the first one rank?).
+
+```bash
+codegraft eval --last 20 --k 12        # score the most recent 20 commits
+codegraft eval --ablation              # run with vs without a ranking signal, show the delta
+codegraft eval <sha> <sha> --json      # specific commits, machine-readable
+```
+
+Read it **comparatively**: it ranks the current tree and commit-changed-files is
+noisy ground truth, so the *delta* between two runs (before/after a ranking
+change, or `--ablation`) is the trustworthy number, not the absolute score. It's
+the regression guard for the ranker.
 
 ## Use as an MCP server (for coding agents)
 
