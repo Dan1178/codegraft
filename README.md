@@ -96,10 +96,23 @@ Useful flags: `--repo`, `--subdir`, `--request-file`, `--provider anthropic|open
 ### Measuring ranking quality — `codegraft eval`
 
 How good is `inspect` at surfacing the *right* files? `eval` answers that
-deterministically, with no API call: it turns your git history into a benchmark
-— each commit's subject is the request, the files it changed are the gold set —
-and reports **recall@k** (did the changed files land in the top-k bundle?) and
-**MRR** (how high did the first one rank?).
+deterministically, with no API call, by turning your git history into a
+benchmark. From each commit it pulls **two** things, playing two different roles:
+
+- the **commit subject → the request** (the *question*): fed to the same ranker
+  `inspect` uses, exactly as if you'd typed it. The message doesn't define the
+  ranking — it's just the query the ranker responds to.
+- the **files that commit changed → the gold set** (the *answer key*): used to
+  grade whether the ranker actually surfaced them.
+
+```
+commit subject ───────► request ──► [ranker] ──► ranked files ─┐
+commit's changed files ─► gold set ────────────────────────────┤
+                                              compare → recall@k, MRR
+```
+
+It then reports **recall@k** (did the changed files land in the top-k bundle?)
+and **MRR** (how high did the first one rank?).
 
 ```bash
 codegraft eval --last 20 --k 12        # score the most recent 20 commits
@@ -107,10 +120,15 @@ codegraft eval --ablation              # run with vs without a ranking signal, s
 codegraft eval <sha> <sha> --json      # specific commits, machine-readable
 ```
 
-Read it **comparatively**: it ranks the current tree and commit-changed-files is
-noisy ground truth, so the *delta* between two runs (before/after a ranking
-change, or `--ablation`) is the trustworthy number, not the absolute score. It's
-the regression guard for the ranker.
+Two things to keep in mind:
+
+- **Commit-message quality affects the score.** A sharp subject ("Add RBAC to
+  admin routes") is a strong request and ranks well; a vague one ("fix stuff")
+  is a thin query and scores low — the ranker didn't fail, the question did.
+- **Read it comparatively.** It ranks the current tree and commit-changed-files
+  is noisy ground truth, so the *delta* between two runs (before/after a ranking
+  change, or `--ablation`) is the trustworthy number — not the absolute score.
+  It's the regression guard for the ranker.
 
 ## Use as an MCP server (for coding agents)
 
