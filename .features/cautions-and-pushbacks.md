@@ -18,15 +18,23 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   LLM reranking or embeddings (the latter is explicitly out of V1 scope).
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
-**Status: accepted for now — revisit at Phase 4.**
+**Status: MATERIALIZED then RESOLVED.**
 
-Big schemas can hurt structured-output reliability and inflate latency/cost.
-Kept in full for Phase 1 because the model isn't called yet and locking the
-contract is the point. When the real provider call lands:
+This is exactly what I worried about. On the user's first live Anthropic run, the
+schema was too complex for grammar-constrained structured outputs:
+`400 invalid_request_error: "Grammar compilation timed out."` — the structured-
+output engine compiles the JSON schema into a decoding grammar up front, and our
+schema is big enough to time that out.
 
-- Watch for dropped/empty fields or malformed responses on the full schema.
-- Be willing to ship a leaner core schema first and grow it once the round-trip
-  is solid.
+**Fix:** the Anthropic provider switched from `messages.parse` (grammar-
+constrained) to **instructed JSON + Pydantic validation** — embed the schema in
+the prompt (~1.9k tokens, `metadata` stripped), call `messages.create`, then
+`ImplementationPlan.model_validate_json()` on the extracted object. No grammar
+compilation, so the error cannot recur. The typed contract (the real value) is
+preserved. Also bumped `max_output_tokens` 8000→12000 (JSON is more verbose than
+prose) and raise a clear error on `stop_reason == "max_tokens"`. OpenAI still
+uses `chat.completions.parse` (its engine handles the schema). `live_anthropic`
+smoke test exercises the real path. (This is the fallback caution #3 anticipated.)
 
 ## 3. The ChatGPT research citations are unverifiable
 **Status: RESOLVED (Phase 4).**

@@ -27,7 +27,7 @@ class _FakeMessages:
         self._response = response
         self.calls: list[dict] = []
 
-    def parse(self, **kwargs):
+    def create(self, **kwargs):
         self.calls.append(kwargs)
         return self._response
 
@@ -37,10 +37,14 @@ class _FakeClient:
         self.messages = _FakeMessages(response)
 
 
-class _FakeResponse:
-    def __init__(self, parsed_output, stop_reason: str = "end_turn") -> None:
-        self.parsed_output = parsed_output
-        self.stop_reason = stop_reason
+def _content_response(plan_or_text, stop_reason: str = "end_turn"):
+    """Mimic an Anthropic messages.create() response carrying JSON text."""
+
+    text = plan_or_text if isinstance(plan_or_text, str) else plan_or_text.model_dump_json()
+    return SimpleNamespace(
+        content=[SimpleNamespace(type="text", text=text)],
+        stop_reason=stop_reason,
+    )
 
 
 def _sample_plan() -> ImplementationPlan:
@@ -78,28 +82,39 @@ def test_prompt_includes_evidence() -> None:
 # --- Anthropic provider (mocked) ------------------------------------------
 
 def test_provider_returns_parsed_plan() -> None:
-    client = _FakeClient(_FakeResponse(_sample_plan()))
+    client = _FakeClient(_content_response(_sample_plan()))
     provider = AnthropicProvider(_config(), client=client)
 
     plan = provider.generate_plan(_request())
     assert isinstance(plan, ImplementationPlan)
     assert plan.title == "Sample"
 
-    # The call must request structured output against our schema.
+    # The call embeds the JSON schema in the prompt (instructed-JSON path, not
+    # grammar-constrained structured output).
     call = client.messages.calls[0]
-    assert call["output_format"] is ImplementationPlan
+    assert "output_format" not in call
     assert call["model"] == "claude-sonnet-4-6"
-    assert isinstance(call["system"], str) and call["messages"][0]["role"] == "user"
+    assert call["messages"][0]["role"] == "user"
+    assert "json_schema" in call["messages"][0]["content"]
+    assert "feature_summary" in call["messages"][0]["content"]  # schema field embedded
+
+
+def test_json_extracted_from_surrounding_text() -> None:
+    # Model wraps the JSON in fences / prose — we still extract and validate it.
+    payload = "```json\n" + _sample_plan().model_dump_json() + "\n```\nDone."
+    client = _FakeClient(_content_response(payload))
+    plan = AnthropicProvider(_config(), client=client).generate_plan(_request())
+    assert plan.title == "Sample"
 
 
 def test_temperature_sent_only_when_supported() -> None:
     # sonnet-4-6 accepts temperature
-    c1 = _FakeClient(_FakeResponse(_sample_plan()))
+    c1 = _FakeClient(_content_response(_sample_plan()))
     AnthropicProvider(_config("claude-sonnet-4-6"), client=c1).generate_plan(_request())
     assert c1.messages.calls[0].get("temperature") == 0.2
 
     # opus-4-8 rejects sampling params -> must be omitted
-    c2 = _FakeClient(_FakeResponse(_sample_plan()))
+    c2 = _FakeClient(_content_response(_sample_plan()))
     AnthropicProvider(_config("claude-opus-4-8"), client=c2).generate_plan(_request())
     assert "temperature" not in c2.messages.calls[0]
 
@@ -111,20 +126,27 @@ def test_missing_key_raises_provider_error() -> None:
         AnthropicProvider(config).generate_plan(_request())
 
 
-def test_unparsable_response_raises() -> None:
-    client = _FakeClient(_FakeResponse(parsed_output=None, stop_reason="max_tokens"))
+def test_non_json_response_raises() -> None:
+    client = _FakeClient(_content_response("Sorry, I cannot help with that."))
     provider = AnthropicProvider(_config(), client=client)
-    with pytest.raises(PlanValidationError, match="max_tokens"):
+    with pytest.raises(PlanValidationError, match="no JSON object"):
+        provider.generate_plan(_request())
+
+
+def test_truncated_response_raises() -> None:
+    client = _FakeClient(_content_response(_sample_plan(), stop_reason="max_tokens"))
+    provider = AnthropicProvider(_config(), client=client)
+    with pytest.raises(PlanValidationError, match="truncated"):
         provider.generate_plan(_request())
 
 
 def test_sdk_error_wrapped_as_provider_error() -> None:
-    client = _FakeClient(_FakeResponse(_sample_plan()))
+    client = _FakeClient(_content_response(_sample_plan()))
 
     def _raise(**kwargs):
         raise RuntimeError("network down")
 
-    client.messages.parse = _raise  # type: ignore[assignment]
+    client.messages.create = _raise  # type: ignore[assignment]
     with pytest.raises(ProviderError, match="network down"):
         AnthropicProvider(_config(), client=client).generate_plan(_request())
 

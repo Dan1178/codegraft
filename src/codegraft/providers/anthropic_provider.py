@@ -1,16 +1,21 @@
-"""Anthropic provider: structured-output plan generation.
+"""Anthropic provider: instructed-JSON plan generation.
 
-Uses ``client.messages.parse(..., output_format=ImplementationPlan)`` so the
-model is constrained to our schema and the SDK validates the response into a
-Pydantic object. All Anthropic-specific concerns stay in this file.
+We deliberately do **not** use grammar-constrained structured outputs
+(``messages.parse`` / ``output_config.format``). Our ``ImplementationPlan``
+schema is large and deeply nested, and the structured-output engine compiles the
+schema into a constrained-decoding grammar up front — which times out on a schema
+this size ("Grammar compilation timed out"). So instead we hand the model the
+JSON Schema in the prompt, ask for a single JSON object, and validate the result
+with the same Pydantic model. This keeps the typed contract (the real value)
+without depending on grammar compilation.
 
-The SDK is an *optional* dependency (``codegraft[anthropic]``) and is imported
-lazily, so the rest of codegraft — and the test suite — never requires it. Tests
-inject a fake client; only real runs construct ``anthropic.Anthropic``.
+The SDK is an optional dependency (``codegraft[anthropic]``), imported lazily;
+tests inject a fake client.
 """
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from codegraft.config import Config
@@ -20,8 +25,50 @@ from codegraft.providers.base import PlanningRequest, supports_temperature
 from codegraft.providers.prompt import build_planning_prompt
 
 
+def _plan_schema_json() -> str:
+    """The plan JSON Schema, minus `metadata` (codegraft stamps that itself)."""
+
+    schema = ImplementationPlan.model_json_schema()
+    schema.get("properties", {}).pop("metadata", None)
+    if "required" in schema:
+        schema["required"] = [r for r in schema["required"] if r != "metadata"]
+    return json.dumps(schema, separators=(",", ":"))
+
+
+_JSON_INSTRUCTION = (
+    "\n\n---\n"
+    "Respond with a SINGLE JSON object conforming to the JSON Schema below. "
+    "Output ONLY the JSON object — no prose, no explanation, no markdown code "
+    "fences. Do not include a `metadata` field.\n\n"
+    "<json_schema>\n{schema}\n</json_schema>"
+)
+
+
+def _response_text(response: Any) -> str:
+    """Concatenate the text blocks of an Anthropic message response."""
+
+    parts: list[str] = []
+    for block in getattr(response, "content", None) or []:
+        if getattr(block, "type", None) == "text":
+            parts.append(block.text)
+    return "".join(parts)
+
+
+def _parse_plan(text: str) -> ImplementationPlan:
+    """Extract and validate the JSON object from the model's text response."""
+
+    start = text.find("{")
+    end = text.rfind("}")
+    if start == -1 or end <= start:
+        raise PlanValidationError("Anthropic response contained no JSON object")
+    try:
+        return ImplementationPlan.model_validate_json(text[start : end + 1])
+    except Exception as exc:
+        raise PlanValidationError(f"could not parse plan JSON: {exc}") from exc
+
+
 class AnthropicProvider:
-    """Generates plans via the Anthropic Messages API with structured outputs."""
+    """Generates plans via the Anthropic Messages API (instructed JSON)."""
 
     def __init__(self, config: Config, client: Any | None = None) -> None:
         self._config = config
@@ -51,6 +98,7 @@ class AnthropicProvider:
     def generate_plan(self, request: PlanningRequest) -> ImplementationPlan:
         client = self._ensure_client()
         system, user = build_planning_prompt(request)
+        user = user + _JSON_INSTRUCTION.format(schema=_plan_schema_json())
 
         model = self._config.provider.model
         kwargs: dict[str, Any] = {
@@ -58,24 +106,19 @@ class AnthropicProvider:
             "max_tokens": self._config.provider.max_output_tokens,
             "system": system,
             "messages": [{"role": "user", "content": user}],
-            "output_format": ImplementationPlan,
         }
         temperature = self._config.provider.temperature
         if temperature is not None and supports_temperature(model):
             kwargs["temperature"] = temperature
 
         try:
-            response = client.messages.parse(**kwargs)
-        except PlanValidationError:
-            raise
+            response = client.messages.create(**kwargs)
         except Exception as exc:  # wrap any SDK/transport error with context
             raise ProviderError(f"Anthropic request failed: {exc}") from exc
 
-        plan = getattr(response, "parsed_output", None)
-        if not isinstance(plan, ImplementationPlan):
-            stop = getattr(response, "stop_reason", None)
+        if getattr(response, "stop_reason", None) == "max_tokens":
             raise PlanValidationError(
-                "Anthropic response did not parse into an ImplementationPlan"
-                + (f" (stop_reason={stop})" if stop else "")
+                "the plan was truncated (hit max_tokens before the JSON closed); "
+                "increase provider.max_output_tokens in codegraft.toml"
             )
-        return plan
+        return _parse_plan(_response_text(response))

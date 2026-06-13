@@ -46,10 +46,20 @@ repo path + feature request
 ## Key design decisions
 
 ### 1. A typed output contract (`models/plan.py`)
-The model returns a schema-constrained `ImplementationPlan`, not Markdown. This
+The model returns a validated `ImplementationPlan` (Pydantic), not Markdown. This
 gives reliable parsing, deterministic rendering, snapshot tests, and `--json`
-for free. Both providers use their SDK's structured-output path
-(`messages.parse` / `chat.completions.parse`) against this one Pydantic model.
+for free. How that JSON is obtained differs by provider:
+
+- **Anthropic** uses *instructed JSON* — the schema is embedded in the prompt and
+  the response is validated with Pydantic. It does **not** use grammar-constrained
+  structured outputs (`messages.parse`): the engine compiles the schema into a
+  decoding grammar up front, which times out on a schema this large ("Grammar
+  compilation timed out"). Instructed-JSON keeps the typed contract without that
+  dependency.
+- **OpenAI** uses `chat.completions.parse(response_format=ImplementationPlan)`,
+  whose structured-output engine handles the schema without that limitation.
+
+Either way the boundary is the same: a validated Pydantic object in, Markdown out.
 
 ### 2. Deterministic context assembly
 Selecting *which files the model sees* is the core engineering problem, and it's

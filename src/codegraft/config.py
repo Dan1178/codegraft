@@ -30,9 +30,9 @@ class ProviderConfig(BaseModel):
     # Optional: newer models (Opus 4.7+/Fable) reject sampling params, so the
     # provider only sends this to models that accept it. None = never send.
     temperature: float | None = 0.2
-    # A full ImplementationPlan with phases + handoff prompts is sizeable; keep
-    # generous headroom so structured output isn't truncated mid-JSON.
-    max_output_tokens: int = 8000
+    # A full ImplementationPlan as JSON (phases + handoff prompts) is sizeable;
+    # keep generous headroom so the JSON isn't truncated mid-object.
+    max_output_tokens: int = 12000
 
 
 class RepoConfig(BaseModel):
@@ -119,7 +119,7 @@ DEFAULT_CONFIG_TOML = """\
 name = "anthropic"
 model = "claude-sonnet-4-6"
 temperature = 0.2
-max_output_tokens = 8000
+max_output_tokens = 12000
 
 [repo]
 respect_gitignore = true
