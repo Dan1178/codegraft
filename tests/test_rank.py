@@ -143,6 +143,51 @@ def test_doc_code_blocks_do_not_score_as_symbols(tmp_path: Path) -> None:
         or "notes.md" not in ranked
 
 
+def _taxonomy_repo(root: Path) -> None:
+    """A repo where three thin, keyword-named screens all delegate to one shared
+    screen whose own name carries no request keyword — the meshimate topology."""
+
+    write(root, "package.json", '{"dependencies": {"react": "*"}}\n')
+    for noun in ("Categories", "Tags", "Components"):
+        write(
+            root,
+            f"src/features/taxonomy/screens/{noun}Screen.tsx",
+            "import { TaxonomyManagementScreen } from './TaxonomyManagementScreen';\n"
+            f"export function {noun}Screen() {{\n"
+            f"  return <TaxonomyManagementScreen title=\"{noun}\" />;\n"
+            "}\n",
+        )
+    # The shared implementation: keyword-poor name, generic body. On filename and
+    # content alone it loses to its own wrappers and eats a diversity penalty for
+    # sharing their directory — exactly the file that used to fall out.
+    write(
+        root,
+        "src/features/taxonomy/screens/TaxonomyManagementScreen.tsx",
+        "export function TaxonomyManagementScreen({ title }) {\n"
+        "  // Shared list: rename and remove rows.\n"
+        "  return null;\n"
+        "}\n",
+    )
+    write(root, "src/lib/theme.ts", "export const colors = {};\n")
+
+
+def test_imported_central_file_is_pulled_in(tmp_path: Path) -> None:
+    """A shared file imported by several relevant files earns the import-edge
+    signal and surfaces, even though its name matches no request keyword."""
+
+    _taxonomy_repo(tmp_path)
+    request = "add categories, tags, and components from the settings screen"
+    ranked = {r.path: r for r in analyze_repo(request, tmp_path, _config(tmp_path)).ranked}
+
+    shared = "src/features/taxonomy/screens/TaxonomyManagementScreen.tsx"
+    assert shared in ranked, "shared screen should be pulled in by its importers"
+    signals = ranked[shared].signals
+    # Imported by all three wrappers; the boost is capped at IMPORTED_BY_CAP.
+    assert signals.get("imported_by") == 6.0
+    # The new signal still obeys the explainability invariant.
+    assert abs(sum(signals.values()) - ranked[shared].score) < 1e-6
+
+
 def test_summary_detects_stack(tmp_path: Path) -> None:
     _fixture_repo(tmp_path)
     summary = _analysis(tmp_path).summary

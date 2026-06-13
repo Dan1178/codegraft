@@ -47,6 +47,8 @@ W_SYMBOL = 4.0           # per keyword matching a defined symbol name
 ROOT_PROXIMITY = 1.0     # shallow files are slightly more likely to matter
 DIVERSITY_PENALTY = 1.5  # subtracted per already-selected file in same dir...
 DIVERSITY_PENALTY_CAP = 3  # ...but capped, so a single-folder scope isn't crushed
+W_IMPORTED_BY = 2.0      # per relevant file that imports this one (centrality)...
+IMPORTED_BY_CAP = 3      # ...capped, so a ubiquitous util can't dominate on edges
 
 # Architectural role hints keyed by path segment.
 _ROLE_WEIGHTS: dict[str, float] = {
@@ -65,8 +67,118 @@ _SYMBOL_RE = re.compile(
     r"\b(?:def|class|func|function|type|struct|interface|fn|const|var)\s+([A-Za-z_]\w*)"
 )
 
+# Import extraction for the import-edge signal. JS/TS: any module string after
+# `from` / `import` / `require(`. Python: `from a.b import c, d` / `import a.b`.
+_JS_IMPORT_RE = re.compile(r"""(?:from|import|require)\s*\(?\s*['"]([^'"\n]+)['"]""")
+_PY_FROM_RE = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+(.+)$", re.MULTILINE)
+_PY_IMPORT_RE = re.compile(r"^\s*import\s+([.\w][.\w\s,]*)", re.MULTILINE)
+
+_JS_EXTS = {"ts", "tsx", "js", "jsx", "mjs", "cjs"}
+# Extensions tried (in order) when resolving a JS/TS module specifier to a file.
+# Leading "" lets an already-suffixed specifier resolve as-is.
+_RESOLVE_EXTS = ("", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".d.ts")
+
 # How many files to read content for, per scale mode.
 _STAGE2_LIMIT = {"normal": 50, "medium": 35, "large": 20}
+
+
+def _build_path_index(files) -> tuple[set[str], dict[str, list[str]]]:
+    """Index candidate files for import resolution: the full path set plus a
+    basename-stem → paths map used as a last-resort match for bare/dotted imports."""
+
+    all_paths = {f.path for f in files}
+    by_basename: dict[str, list[str]] = {}
+    for path in all_paths:
+        stem = _basename(path).rsplit(".", 1)[0]
+        by_basename.setdefault(stem, []).append(path)
+    return all_paths, by_basename
+
+
+def _normalize_rel(importer: str, spec: str) -> str:
+    """Resolve a relative specifier (``./x``, ``../y/z``) against the importer's
+    directory into a repo-relative, slash-joined base path (no extension)."""
+
+    parts = importer.split("/")[:-1]  # importer's directory
+    for seg in spec.split("/"):
+        if seg in ("", "."):
+            continue
+        if seg == "..":
+            if parts:
+                parts.pop()
+        else:
+            parts.append(seg)
+    return "/".join(parts)
+
+
+def _match_module(base: str, all_paths: set[str]) -> str | None:
+    """Map a module base path to a real candidate file, trying source extensions
+    and an ``index`` barrel — the way a JS/TS resolver would."""
+
+    for ext in _RESOLVE_EXTS:
+        if (cand := base + ext) in all_paths:
+            return cand
+    for ext in _RESOLVE_EXTS[1:]:
+        if (cand := f"{base}/index{ext}") in all_paths:
+            return cand
+    return None
+
+
+def _resolve_specifier(spec: str, importer: str, all_paths: set[str]) -> str | None:
+    """Resolve a JS/TS import specifier to a candidate path, precisely. Relative
+    and ``@/`` (→ ``src/``) specifiers resolve by path; bare package imports don't."""
+
+    if spec.startswith("."):
+        return _match_module(_normalize_rel(importer, spec), all_paths)
+    if spec.startswith("@/"):
+        return _match_module("src/" + spec[2:], all_paths)
+    return None
+
+
+def _referenced_paths(
+    text: str, importer: str, all_paths: set[str], by_basename: dict[str, list[str]]
+) -> set[str]:
+    """Repo-internal files that *importer* imports.
+
+    Precise for JS/TS relative/alias specifiers; for bare packages and Python
+    dotted modules it falls back to a basename match, but only when that basename
+    is unambiguous — an ambiguous match would smear the centrality boost across
+    same-named files in different directories.
+    """
+
+    ext = importer.rsplit(".", 1)[-1].lower() if "." in importer else ""
+    refs: set[str] = set()
+    bare: set[str] = set()
+
+    if ext in _JS_EXTS:
+        for spec in _JS_IMPORT_RE.findall(text):
+            resolved = _resolve_specifier(spec, importer, all_paths)
+            if resolved:
+                refs.add(resolved)
+            else:
+                bare.add(spec.rsplit("/", 1)[-1])
+    elif ext == "py":
+        for module, names in _PY_FROM_RE.findall(text):
+            bare.add(module.strip(".").rsplit(".", 1)[-1])
+            for name in names.split(","):
+                token = name.strip().split(" ")[0].strip("()")  # drop `as alias`
+                if token and token != "*":
+                    bare.add(token)
+        for group in _PY_IMPORT_RE.findall(text):
+            for module in group.split(","):
+                token = module.strip().split(" ")[0]
+                if token:
+                    bare.add(token.rsplit(".", 1)[-1])
+    else:
+        return refs
+
+    for token in bare:
+        stem = token.rsplit(".", 1)[0]
+        paths = by_basename.get(stem)
+        if paths and len(paths) == 1 and paths[0] != importer:
+            refs.add(paths[0])
+
+    refs.discard(importer)
+    return refs
 
 
 def _mode_cap(config: Config, mode: str) -> int:
@@ -123,10 +235,8 @@ def _stage1_signals(
     return signals
 
 
-def _stage2_signals(
-    rel_path: str, abs_path: Path, keywords: set[str], max_lines: int
-) -> dict[str, float]:
-    """Content-keyword and symbol-overlap signals — reads the file (bounded)."""
+def _read_head(abs_path: Path, max_lines: int) -> str | None:
+    """Read the first *max_lines* lines of a file, or None if it can't be read."""
 
     try:
         with abs_path.open("r", encoding="utf-8", errors="replace") as fh:
@@ -135,9 +245,13 @@ def _stage2_signals(
                 if i >= max_lines:
                     break
                 lines.append(line)
-            text = "".join(lines)
+            return "".join(lines)
     except OSError:
-        return {}
+        return None
+
+
+def _stage2_signals(rel_path: str, text: str, keywords: set[str]) -> dict[str, float]:
+    """Content-keyword and symbol-overlap signals from already-read *text*."""
 
     signals: dict[str, float] = {}
 
@@ -183,15 +297,37 @@ def rank_files(
 
     # Stage 2: read content for the strongest path-level candidates. On large
     # repos this bounds I/O; content-only files past the cutoff keep their
-    # (path-only) score, which is the documented large-repo tradeoff.
+    # (path-only) score, which is the documented large-repo tradeoff. We read
+    # each file once and reuse the text for both content signals and the
+    # import-edge tally below.
+    all_paths, by_basename = _build_path_index(scan.files)
+    ranked_by_path = {r.path: r for r in stage1}
+    import_counts: dict[str, int] = {}
+
     stage2_limit = _STAGE2_LIMIT.get(summary.mode, 50)
     for ranked in stage1[:stage2_limit]:
-        extra = _stage2_signals(
-            ranked.path, root / ranked.path, keywords, config.repo.max_file_lines
-        )
+        text = _read_head(root / ranked.path, config.repo.max_file_lines)
+        if text is None:
+            continue
+        extra = _stage2_signals(ranked.path, text, keywords)
         if extra:
             ranked.signals.update(extra)
             ranked.score += sum(extra.values())
+        for ref in _referenced_paths(text, ranked.path, all_paths, by_basename):
+            import_counts[ref] = import_counts.get(ref, 0) + 1
+
+    # Import-edge signal: a file imported by the relevant files we just read is
+    # likely architecturally central even when its own name carries no request
+    # keyword (e.g. a shared screen behind thin keyword-named wrappers). This is
+    # a lightweight reference scan, not an AST — only files we actually read can
+    # contribute edges, which keeps it bounded.
+    for path, count in import_counts.items():
+        target = ranked_by_path.get(path)
+        if target is None:
+            continue
+        boost = min(count, IMPORTED_BY_CAP) * W_IMPORTED_BY
+        target.signals["imported_by"] = boost
+        target.score += boost
 
     # Now drop files with no signal at all and re-rank.
     stage1 = [r for r in stage1 if r.score > 0]
