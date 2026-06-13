@@ -67,6 +67,14 @@ done without the model: a deterministic ranker scores every candidate file and a
 budgeted extractor pulls bounded snippets. `inspect` exposes the whole thing —
 ranked files with a per-signal breakdown — so ranking is debuggable, not magic.
 
+### 2a. One engine, three interfaces (ports & adapters)
+`repo/analyze.py` (`analyze_repo → RepoAnalysis`) is the deterministic core.
+Three thin adapters consume it, none owning logic the others need:
+`cli.py` (human interface), `mcp.py` (agent interface — an MCP server exposing
+`select_context` free/deterministic and `generate_plan` opt-in), and
+`providers/*` (the LLM interface). Adding the MCP server was ~one module over
+the existing core — the payoff of isolating the engine.
+
 ### 3. Provider abstraction (`providers/`)
 `PlanProvider` is a one-method protocol: `generate_plan(PlanningRequest) ->
 ImplementationPlan`. The prompt assembly (`providers/prompt.py`) is shared, so

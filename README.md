@@ -91,6 +91,31 @@ Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 candidate files — ~46,6
 Useful flags: `--repo`, `--subdir`, `--request-file`, `--provider anthropic|openai`,
 `--model`, `--stdout`, `--json`, `--dry-run`, `--stub` (plan), `--snippets` (inspect).
 
+## Use as an MCP server (for coding agents)
+
+codegraft's engine is also exposed over the **Model Context Protocol**, so a
+coding agent (Claude Code, etc.) can call it directly — no per-prompt API spend
+for the part that matters:
+
+```bash
+pip install -e ".[mcp]"
+# register the stdio server with Claude Code:
+claude mcp add codegraft codegraft-mcp
+```
+
+Two tools:
+
+- **`select_context(request, repo, subdir?)`** — the deterministic context
+  bundle: ranked files + bounded snippets for a request. **No LLM call, no key,
+  no per-request cost.** Hands the agent the right files instantly so it explores
+  less. This is the differentiated piece.
+- **`generate_plan(request, repo, …)`** — the full structured plan via a provider.
+  **Opt-in** (costs tokens / needs a key); use it when you want a reviewable plan
+  artifact, not for context.
+
+The server is a thin adapter over the same `analyze_repo` engine the CLI uses —
+one core, three interfaces (CLI, MCP, LLM providers).
+
 ## Architecture notes
 
 - **Typed output contract.** Providers return a validated `ImplementationPlan`

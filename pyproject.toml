@@ -23,11 +23,13 @@ dependencies = [
 [project.optional-dependencies]
 anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.40"]
-all = ["anthropic>=0.40", "openai>=1.40"]
+mcp = ["mcp>=1.2"]
+all = ["anthropic>=0.40", "openai>=1.40", "mcp>=1.2"]
 dev = ["pytest>=8.2", "pytest-cov>=5.0"]
 
 [project.scripts]
 codegraft = "codegraft.cli:app"
+codegraft-mcp = "codegraft.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/codegraft"]

@@ -137,6 +137,16 @@ sending by shipping a bounded bundle instead of the whole candidate set.
 - [ ] Narrow Python-only AST summarizer for top-level defs
 - [ ] Repo-analysis cache keyed by file hashes
 
+**V2 — started**
+- [x] **MCP server** (`src/codegraft/mcp.py`, `[mcp]` extra, `codegraft-mcp` script):
+      exposes the engine as agent tools — `select_context` (deterministic, free,
+      the differentiated piece) + `generate_plan` (opt-in LLM). Thin adapter over
+      `analyze_repo`; mocked-free payload tests. The strategic pivot: expose the
+      deterministic context engine to coding agents, not the commodity LLM planner.
+      See `experiment-meshimate-ab.md` for the reasoning that motivated it.
+- [ ] Import-graph ranking boost (pull in a file imported by several top-ranked
+      files — the gap the MeshiMate run exposed). Open.
+
 **Explicitly deferred to V2** (do NOT build — see `CLAUDE.md`)
 - Full AST / tree-sitter across languages · embeddings / vector stores / RAG ·
   git-diff validation vs plan · multi-agent planner+reviewer · SQLite project
