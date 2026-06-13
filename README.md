@@ -124,15 +124,21 @@ codegraft eval --ablation              # run with vs without a ranking signal, s
 codegraft eval <sha> <sha> --json      # specific commits, machine-readable
 ```
 
-Two things to keep in mind:
+A few things to keep in mind:
 
 - **Commit-message quality affects the score.** A sharp subject ("Add RBAC to
   admin routes") is a strong request and ranks well; a vague one ("fix stuff")
   is a thin query and scores low — the ranker didn't fail, the question did.
+- **Large commits are capped by the bundle size.** Recall is `hits / changed
+  files`, and the bundle holds at most `max_ranked_files` (12). A commit that
+  changed 20 files therefore can't exceed recall@12 = 0.6 no matter how good the
+  ranking — so sprawling commits (often new-feature scaffolding) drag the
+  *absolute* aggregate down. The `Found/Gold` column makes this visible.
 - **Read it comparatively.** It ranks the current tree and commit-changed-files
-  is noisy ground truth, so the *delta* between two runs (before/after a ranking
-  change, or `--ablation`) is the trustworthy number — not the absolute score.
-  It's the regression guard for the ranker.
+  is noisy ground truth (and the cap above applies equally to both runs), so the
+  *delta* between two runs (before/after a ranking change, or `--ablation`) is
+  the trustworthy number — not the absolute score. It's the regression guard for
+  the ranker.
 
 ## Use as an MCP server (for coding agents)
 
@@ -216,6 +222,21 @@ deterministic heuristic, not semantic search. Token counts are estimates
 Focused V2 candidates only: an anti-hallucination validator (assert every
 reviewed file exists in the bundle), optional prompt caching for repeated runs,
 a narrow Python-only AST summarizer, and an opt-in plan-vs-diff reviewer.
+
+**`eval` gold-set scoping (if justified).** `eval` currently treats every file a
+commit changed as gold, weighted equally. Two refinements would sharpen the
+absolute scores (the comparative delta is already unaffected):
+
+- `--max-gold N` — skip commits whose change set exceeds the bundle size, so the
+  aggregate isn't dragged by commits the bundle physically can't cover; print how
+  many were skipped.
+- `--diff-filter` — scope the gold set by git status (e.g. modified-only) to
+  measure pure *retrieval* of existing files, separating it from from-scratch
+  files the commit created. Caveat: excluding all additions can drop a genuinely
+  central new file (the new `mcp.py` *is* the answer for "Add MCP server"), so
+  this changes what's measured rather than strictly improving it.
+
+Deferred until a real run shows the absolute scores misleading enough to act on.
 
 ## License
 
