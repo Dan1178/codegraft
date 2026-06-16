@@ -179,15 +179,48 @@ A few things to keep in mind:
 
 codegraft's engine is also exposed over the **Model Context Protocol**, so a
 coding agent (Claude Code, etc.) can call it directly — no per-prompt API spend
-for the part that matters:
+for the part that matters.
+
+### Install for Claude Code (step by step)
+
+New to MCP? The mental model: an **MCP server** is a small program that exposes
+"tools" an agent can call. Claude Code doesn't know about codegraft's tools until
+you introduce them — once. Three moves: **install → register → restart.**
+
+You need Python 3.11+ and the [Claude Code](https://claude.com/claude-code) CLI.
 
 ```bash
-pip install -e ".[mcp]"
-# register the stdio server with Claude Code:
+# 1. Install codegraft with the MCP extra (this adds the `codegraft-mcp` command).
+pip install "codegraft[mcp]"           # or, from a clone: pip install ".[mcp]"
+
+# 2. Register the server with Claude Code — "add a server named codegraft,
+#    started by running the command codegraft-mcp".
 claude mcp add codegraft codegraft-mcp
+
+# 3. Restart Claude Code (or start a fresh session), then verify:
+claude mcp list                         # codegraft should be listed
 ```
 
-The tools — four deterministic, free read-side tools plus one opt-in planner:
+That's it. In a chat the tools appear as `select_context`, `impact_of`,
+`get_symbol`, `affected_tests`, and `generate_plan`.
+
+For an MCP client other than Claude Code, point it at the same stdio command
+(`codegraft-mcp`) — see the JSON config at the end of this section.
+
+Good to know:
+
+- **No API key for the read-side tools.** `select_context`, `impact_of`,
+  `get_symbol`, and `affected_tests` are deterministic and free. Only
+  `generate_plan` calls an LLM and needs a provider key — separate and opt-in.
+- **A running server doesn't pick up code changes.** After you update codegraft,
+  restart the server (or Claude Code) so new/changed tools show up.
+- **`-e` (editable) ties the server to a checked-out branch** — handy when hacking
+  on codegraft, but for plain use prefer `pip install "codegraft[mcp]"` (no `-e`)
+  so the tool set doesn't shift when you switch git branches.
+
+### The tools
+
+Four deterministic, free read-side tools plus one opt-in planner:
 
 - **`select_context(request, repo, subdir?)`** — the deterministic context
   bundle: ranked files + bounded snippets for a request. **No LLM call, no key,
