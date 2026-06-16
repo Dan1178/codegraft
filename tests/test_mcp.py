@@ -12,6 +12,7 @@ import pytest
 
 from codegraft.mcp import (
     affected_tests_payload,
+    get_symbol_payload,
     impact_of_payload,
     select_context_payload,
 )
@@ -79,6 +80,22 @@ def test_impact_of_payload_transitive(tmp_path: Path) -> None:
 
     assert "transitive" in payload
     assert payload["transitive"] == ["tests/test_feature.py"]
+
+
+def test_get_symbol_payload_shape(tmp_path: Path) -> None:
+    import json
+
+    _graph_fixture(tmp_path)
+    payload = get_symbol_payload("core_fn", str(tmp_path))
+
+    assert payload["name"] == "core_fn"
+    assert payload["resolution"] == "heuristic"
+    assert len(payload["matches"]) == 1
+    match = payload["matches"][0]
+    assert match["path"] == "app/core.py"
+    assert match["signature"].startswith("def core_fn")
+    assert match["span"] == [1, 2]
+    json.dumps(payload)
 
 
 def test_affected_tests_payload_shape(tmp_path: Path) -> None:

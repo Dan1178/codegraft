@@ -24,6 +24,7 @@ from codegraft.repo.analyze import analyze_repo
 from codegraft.repo.discover import discover_repo
 from codegraft.repo.graph import affected_tests, impact_of
 from codegraft.repo.summarize import summarize
+from codegraft.repo.symbols import find_symbol
 
 
 def select_context_payload(
@@ -111,6 +112,36 @@ def affected_tests_payload(
     return payload
 
 
+def get_symbol_payload(
+    name: str, repo: str = ".", path: str | None = None
+) -> dict[str, Any]:
+    """One bounded definition of *name* instead of a whole-file read.
+
+    Returns every match (a name can be defined in several places) as minimal
+    JSON: path, signature, 1-based span, the line-numbered snippet, and a
+    ``resolution`` trust flag.
+    """
+
+    root = Path(repo)
+    config = Config.load(root)
+    scan = discover_repo(root, config)
+    hits = find_symbol(name, scan, root, config, in_path=path)
+    return {
+        "name": name,
+        "resolution": "heuristic",
+        "matches": [
+            {
+                "path": h.path,
+                "signature": h.signature,
+                "span": [h.span[0], h.span[1]],
+                "snippet": h.snippet,
+                "truncated": h.truncated,
+            }
+            for h in hits
+        ],
+    }
+
+
 def generate_plan_payload(
     request: str,
     repo: str = ".",
@@ -167,6 +198,20 @@ def build_server() -> Any:
         background indexer; skip it for a file you already know is a leaf."""
 
         return impact_of_payload(target, repo, transitive)
+
+    @server.tool()
+    def get_symbol(
+        name: str, repo: str = ".", path: str | None = None
+    ) -> dict[str, Any]:
+        """Call this instead of reading a whole file when you need one
+        function/class/CSS selector — a natural follow-up to `select_context` once it
+        points you at a file. Returns just that definition: signature, body, and a
+        line-numbered snippet. Free, no LLM, tiny payload. Heuristic location and
+        extent (not compiler-accurate) — for exact cross-file resolution use your
+        editor's go-to-definition. `name` is style-insensitive (adminPanel matches
+        admin_panel); pass `path` to scope to one file, else all matches are returned."""
+
+        return get_symbol_payload(name, repo, path)
 
     @server.tool()
     def affected_tests(changed_files: list[str], repo: str = ".") -> dict[str, Any]:

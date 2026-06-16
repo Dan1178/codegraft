@@ -285,6 +285,63 @@ def impact(
     )
 
 
+@app.command()
+def symbol(
+    name: str = typer.Argument(..., help="Symbol name to locate (function/class/selector)."),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to analyze.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    in_path: Optional[str] = typer.Option(
+        None, "--in", help="Restrict the search to one repo-relative file."
+    ),
+) -> None:
+    """Fetch one symbol definition instead of reading the whole file.
+
+    Locates where `name` is defined and prints its signature, body, and span.
+    Location and extent are heuristic (regex + block balancing, not an LSP), so
+    this is "good enough to avoid a full-file read," not go-to-definition.
+    """
+
+    from codegraft.repo.discover import discover_repo
+    from codegraft.repo.symbols import find_symbol
+
+    try:
+        config = Config.load(repo)
+        scan = discover_repo(repo, config)
+        hits = find_symbol(name, scan, repo, config, in_path=in_path)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(BANNER)
+    if not hits:
+        scope = f" in [bold]{in_path}[/bold]" if in_path else ""
+        console.print(
+            f"\n[yellow]No definition of[/yellow] [bold]{name}[/bold]{scope} "
+            "(heuristically).\n"
+            "[dim]Try the exact identifier, or drop --in to search all files.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    if len(hits) > 1:
+        console.print(
+            f"[dim]{len(hits)} definitions of[/dim] [bold]{name}[/bold] "
+            "[dim](returning all — disambiguate with --in):[/dim]"
+        )
+    for h in hits:
+        trunc = " [yellow](truncated)[/yellow]" if h.truncated else ""
+        console.print(
+            f"\n[bold cyan]{h.path}[/bold cyan]:{h.span[0]}-{h.span[1]}  "
+            f"[dim](resolution: {h.resolution})[/dim]{trunc}"
+        )
+        console.print(h.snippet)
+    console.print(
+        "\n[dim]Heuristic location/extent — not go-to-definition. "
+        "Good enough to skip a full-file read.[/dim]"
+    )
+
+
 @app.command("affected-tests")
 def affected_tests_cmd(
     files: list[str] = typer.Argument(
@@ -574,6 +631,54 @@ def evaluate_impact(
         typer.echo(_impact_eval_json(report))
         return
     _print_impact_report(report)
+
+
+@app.command("eval-symbol")
+def evaluate_symbol(
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to evaluate.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
+) -> None:
+    """Measure the read-side token savings get_symbol delivers. No git, no model.
+
+    Locates every definition in the repo and reports the mean fraction of a file
+    you avoid reading by fetching one symbol — the baseline value of get_symbol —
+    plus how widely it's applicable (share of files with locatable symbols).
+    """
+
+    from codegraft.evaluation_symbol import run_symbol_eval
+
+    try:
+        config = Config.load(repo)
+        report = run_symbol_eval(repo, config)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    if as_json:
+        import json
+        from dataclasses import asdict
+
+        payload = asdict(report)
+        payload["coverage_pct"] = report.coverage_pct
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    console.print(BANNER)
+    console.print(
+        f"\n[bold]get_symbol value baseline[/bold]  [dim](repo: {repo})[/dim]\n"
+        f"  Files with locatable symbols: "
+        f"[green]{report.files_with_symbols}[/green]/{report.files_total} "
+        f"([cyan]{report.coverage_pct:.0f}%[/cyan] coverage)\n"
+        f"  Symbols located: [green]{report.symbols}[/green]  "
+        f"([yellow]{report.truncated}[/yellow] hit the line cap)\n"
+        f"  Median symbol span: [bold]{report.median_span_lines:.0f}[/bold] lines  "
+        f"vs median file: [bold]{report.median_file_lines:.0f}[/bold] lines\n"
+        f"  [bold]Mean read savings: [green]{report.mean_savings_pct:.1f}%[/green][/bold] "
+        "[dim](fraction of the file you skip by fetching one symbol)[/dim]"
+    )
 
 
 def _print_impact_report(report) -> None:
