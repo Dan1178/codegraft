@@ -1,6 +1,8 @@
 # Feature: intent-aware role weighting (fix frontend under-ranking)
 
-**Status: drafted, not started.** Motivated by a field failure on the oracle-rex
+**Status: implemented (2026-06-15).** All three legs of the validation plan land
+in `tests/test_rank.py` + `tests/test_text.py`; full suite green (95 passed).
+Motivated by a field failure on the oracle-rex
 repo (a Django-dominant full-stack app). See `cautions-and-pushbacks.md` §1, the
 "second field gap" note. This doc is the diagnosis + plan that note pointed at.
 
@@ -89,17 +91,22 @@ A small lexicon check over the extracted keywords:
 
 | Request intent   | backend role × | frontend role × |
 |------------------|----------------|-----------------|
-| `none` (default) | 1.0            | 1.0             |
-| frontend         | ~0.4           | 1.0             |
-| backend          | 1.0            | ~0.4            |
+| `none` (default) | 1.0            | **0 (silent)**  |
+| frontend         | 0.4            | 1.0             |
+| backend          | 1.0            | 0.4             |
 
-When intent is `none`, both sides apply at 1.0; since today's frontend weights
-are effectively 0, the output is **identical to today**. Down-weight (not zero)
-the opposing side so a frontend task that genuinely needs an API file can still
-surface it via keyword/symbol signals.
+**As implemented (refines the original draft):** frontend roles are *gated on*
+only by a frontend-leaning request. They are **silent at `none`** — not applied
+at ×1.0 — because today's ranker has no frontend vocabulary at all, so applying
+new frontend weights to a no-lean request would change rankings and break the
+no-op guarantee. The combined `backend ∪ neutral` vocabulary at `none` is
+byte-for-byte the legacy `_ROLE_WEIGHTS`, so a no-lean request ranks exactly as
+before. Backend roles down-weight (not zero) on a frontend request so a frontend
+task that genuinely needs an API file can still surface it via keyword/symbol
+signals. `views`/`view`/`core` are **neutral**: never modulated.
 
-The down-weight factor (`~0.4`) is a named constant placeholder; it needs tuning
-once a full-stack fixture exists (see open questions).
+The down-weight factor is `ROLE_OPPOSING_INTENT_FACTOR = 0.4`, a named constant;
+it needs tuning once a full-stack eval fixture exists (see open questions).
 
 Surface intent + the applied multiplier in the `signals` breakdown so `inspect`
 stays debuggable.
@@ -123,9 +130,17 @@ Because the eval harness is blind to this bug, validation has three legs:
    pattern (`config.py`, `evaluation.py`). Lets a future full-stack test repo
    measure the delta the way import-edge was measured.
 3. **Synthetic fixture test:** a tiny full-stack tree (`static/js/app.js`,
-   `templates/index.html`, `api/views.py`, `core/models.py`, `services/ai.py`) +
-   a frontend request → assert frontend files rank above backend, and the
-   *inverse* for a backend request.
+   `templates/index.html`, `services/ai.py`, `models/record.py`,
+   `migrations/...`) + a frontend request → assert frontend files rank above
+   backend; the *inverse* (lever off) reproduces the backend bias.
+
+**Done.** Legs map to `test_no_intent_request_is_noop`,
+`test_frontend_request_lifts_frontend_over_backend`,
+`test_intent_roles_off_reproduces_backend_bias`,
+`test_template_earns_symbol_signal`, plus `request_intent` unit tests in
+`test_text.py`. Home-repo sanity (`eval --last 8`, no frontend): recall@10
+identical on/off (0.562), MRR +0.013 with intent on — recall-neutral as expected;
+a real measurement needs a full-stack repo.
 
 ## Scope check
 

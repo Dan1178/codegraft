@@ -313,6 +313,10 @@ def evaluate(
     no_import_edge: bool = typer.Option(
         False, "--no-import-edge", help="Disable the import-edge ranking signal."
     ),
+    no_intent_roles: bool = typer.Option(
+        False, "--no-intent-roles",
+        help="Disable intent-modulated role weights (frontend/backend lean).",
+    ),
     ablation: bool = typer.Option(
         False, "--ablation",
         help="Score with and without the import-edge signal and show the delta.",
@@ -346,11 +350,19 @@ def evaluate(
 
     try:
         if ablation:
-            on = run_eval(repo, config, shas, k=k, use_import_edge=True)
-            off = run_eval(repo, config, shas, k=k, use_import_edge=False)
+            on = run_eval(
+                repo, config, shas, k=k,
+                use_import_edge=True, use_intent_roles=not no_intent_roles,
+            )
+            off = run_eval(
+                repo, config, shas, k=k,
+                use_import_edge=False, use_intent_roles=not no_intent_roles,
+            )
         else:
             report = run_eval(
-                repo, config, shas, k=k, use_import_edge=not no_import_edge
+                repo, config, shas, k=k,
+                use_import_edge=not no_import_edge,
+                use_intent_roles=not no_intent_roles,
             )
     except (subprocess.SubprocessError, OSError) as exc:
         err_console.print(f"[red]error:[/red] git failed while evaluating: {exc}")
@@ -376,7 +388,10 @@ def _print_eval_report(report) -> None:
 
     console.print(BANNER)
     edge = "on" if report.use_import_edge else "off"
-    table = Table(title=f"Ranking eval  (k={report.k}, import-edge {edge})")
+    intent = "on" if report.use_intent_roles else "off"
+    table = Table(
+        title=f"Ranking eval  (k={report.k}, import-edge {edge}, intent-roles {intent})"
+    )
     table.add_column("#", justify="right")
     table.add_column("Commit")
     table.add_column(f"Recall@{report.k}", justify="right")
@@ -428,6 +443,7 @@ def _eval_json(report, ablation_off=None) -> str:
         return {
             "k": rep.k,
             "use_import_edge": rep.use_import_edge,
+            "use_intent_roles": rep.use_intent_roles,
             "mean_recall_at_k": rep.mean_recall_at_k,
             "mean_reciprocal_rank": rep.mean_reciprocal_rank,
             "scored": len(rep.scored),

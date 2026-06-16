@@ -56,6 +56,45 @@ def extract_keywords(request: str, min_len: int = 3) -> set[str]:
     }
 
 
+# Request "intent" lexicons. A request that *unambiguously* leans frontend or
+# backend lets the ranker modulate architectural role weights toward that side
+# (see repo/rank.py). Kept small and high-signal, and all tokens are >= 3 chars
+# so they survive `extract_keywords` filtering. A request that hits both lexicons
+# (or neither) is "none" — we only steer when the lean is clear, so a mixed
+# request competes flat rather than being mis-steered.
+_FRONTEND_INTENT: frozenset[str] = frozenset(
+    {
+        "react", "frontend", "tsx", "jsx", "css", "scss", "tailwind",
+        "component", "components", "template", "templates", "vue", "svelte",
+        "style", "styles", "html", "typescript",
+    }
+)
+_BACKEND_INTENT: frozenset[str] = frozenset(
+    {
+        "endpoint", "endpoints", "route", "routes", "migration", "migrations",
+        "schema", "schemas", "orm", "query", "auth", "backend", "server",
+        "database",
+    }
+)
+
+
+def request_intent(keywords: set[str]) -> str:
+    """Classify a request's architectural lean from its keywords.
+
+    Returns ``"frontend"``, ``"backend"``, or ``"none"``. A request that hits
+    both lexicons (or neither) is ``"none"`` — we only steer when the lean is
+    unambiguous, so a mixed request competes flat instead of being mis-steered.
+    """
+
+    front = bool(keywords & _FRONTEND_INTENT)
+    back = bool(keywords & _BACKEND_INTENT)
+    if front and not back:
+        return "frontend"
+    if back and not front:
+        return "backend"
+    return "none"
+
+
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s")
 
 
