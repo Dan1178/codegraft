@@ -110,8 +110,18 @@ def test_affected_tests_payload_shape(tmp_path: Path) -> None:
 
 
 def test_build_server_registers_tools() -> None:
+    import asyncio
+
     pytest.importorskip("mcp")
     from codegraft.mcp import build_server
 
     server = build_server()
     assert server is not None  # constructs without error with the SDK present
+    names = {t.name for t in asyncio.run(server.list_tools())}
+    assert names == {
+        "select_context",
+        "impact_of",
+        "get_symbol",
+        "affected_tests",
+        "generate_plan",
+    }

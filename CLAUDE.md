@@ -31,6 +31,18 @@ codegraft plan "Add RBAC to admin routes" --repo .
 # change to repo/rank.py before trusting a single-case A/B.
 codegraft eval --last 20 --ablation --k 12
 
+# Read-side context tools (deterministic, no model call) — see Phase 7.
+codegraft impact src/codegraft/repo/rank.py        # who imports this?
+codegraft symbol rank_files --in src/codegraft/repo/rank.py
+codegraft affected-tests src/codegraft/repo/graph.py --since HEAD~1
+
+# Each read-side tool has a validator that baselines its value vs git history,
+# exactly like `eval` does for ranking. Run after changing repo/imports.py,
+# repo/graph.py, or repo/symbols.py.
+codegraft eval-impact --last 20     # impact_of: co-change pair linkage
+codegraft eval-symbol               # get_symbol: read-side token savings
+codegraft eval-tests --last 30      # affected_tests: test-selection recall
+
 # Tests
 pytest                  # all deterministic + mocked tests
 pytest -m live_anthropic  # opt-in, hits the real API (needs ANTHROPIC_API_KEY)
@@ -48,6 +60,16 @@ repo path + request
   → ImplementationPlan  (models/plan.py)               [validated]
   → renderer            (planning/renderer.py)          [deterministic]
   → plans/<date>-<slug>.md
+```
+
+Read-side query tools share the analysis layer but bypass the provider entirely
+(deterministic, no model call):
+
+```
+repo/imports.py  → build_import_graph (forward+reverse edges; resolver shared
+                   with rank.py's imported_by signal — keep it byte-for-byte)
+repo/graph.py    → impact_of (reverse deps), affected_tests (reverse closure ∩ tests)
+repo/symbols.py  → find_symbol (snippet extractor at symbol granularity)
 ```
 
 - `models/plan.py` is the **output contract**. Provider adapters must return a
@@ -80,6 +102,17 @@ repo path + request
 6. ✅ **OpenAI provider** (same `PlanProvider` contract, shared prompt) + `--json`
    + `plans/_debug/<stem>.plan.json` + README/`docs/architecture.md` polish.
    **Done — V1 complete.** Remaining: a live `plan` run with a real key (user).
+7. ✅ **Read-side context tools** (`.features/read-side-context-tools.md`) — the
+   read-side wins that stay inside codegraft's "what should I look at?" mission,
+   pointed backwards. Extracted the import resolver into `repo/imports.py`
+   (`build_import_graph`), then built three deterministic, model-free queries that
+   surface through the MCP adapter + CLI: `impact_of` (reverse deps / blast
+   radius), `get_symbol` (one definition vs a whole-file read), `affected_tests`
+   (reverse-closure ∩ tests, **selection only — never runs them**). All three are
+   heuristic (a reference scan, not an AST) and stamp `resolution`/`completeness:
+   "heuristic"`. Each ships a value validator vs git history — `eval-impact`
+   (co-change pair linkage), `eval-symbol` (read-side token savings),
+   `eval-tests` (test-selection recall) — mirroring `eval` for ranking. **Done.**
 
 ## Scope guardrails — DO NOT build in V1
 

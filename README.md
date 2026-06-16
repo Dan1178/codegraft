@@ -91,11 +91,46 @@ Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 candidate files — ~46,6
 | `codegraft init` | Write a default `codegraft.toml`; report required env keys. |
 | `codegraft inspect "<request>"` | Preview ranked files, score breakdown, snippets, token estimate (no model call). |
 | `codegraft plan "<request>"` | Generate a plan and write it to `plans/`. |
+| `codegraft impact <file>` | What depends on a file — blast-radius triage before you edit (no model call). |
+| `codegraft symbol <name>` | Fetch one symbol definition instead of reading the whole file (no model call). |
+| `codegraft affected-tests <files…>` | Select the tests that depend on changed files (selection only — never runs them). |
 | `codegraft eval` | Score ranking accuracy (recall@k / MRR) against your real git history — no model call. |
+| `codegraft eval-impact` | Baseline for `impact_of`: how often co-changed files are import-linked, vs git history. |
+| `codegraft eval-symbol` | Baseline for `get_symbol`: the read-side token savings vs a whole-file read. |
+| `codegraft eval-tests` | Baseline for `affected_tests`: test-selection recall vs git history. |
 
 Useful flags: `--repo`, `--subdir`, `--request-file`, `--provider anthropic|openai`,
 `--model`, `--stdout`, `--json`, `--dry-run`, `--stub` (plan), `--snippets` (inspect),
-`--last N`, `--k`, `--ablation`, `--no-import-edge` (eval).
+`--last N`, `--k`, `--ablation`, `--no-import-edge` (eval), `--transitive` (impact),
+`--in` (symbol), `--since <ref>` (affected-tests).
+
+### Read-side context tools — `impact`, `symbol`, `affected-tests`
+
+`select_context` answers "what files matter for this request?" These three answer
+the *next* questions in a read-side loop, each replacing a slower habit — all
+deterministic, free, no model call, no key:
+
+- **`codegraft impact <file> [--transitive]`** — the files that import `<file>`,
+  so you gauge blast radius *before* editing instead of grepping for importers.
+- **`codegraft symbol <name> [--in <file>]`** — one definition (signature + body +
+  span) instead of `Read`-ing a whole file for one function/class/selector.
+- **`codegraft affected-tests <files…> [--since <ref>]`** — the tests that
+  (transitively) depend on changed files, so you run the relevant handful first.
+  *Selection only — codegraft does not run them.*
+
+All three are **heuristic** (a lightweight reference scan, not an AST/LSP): they
+miss dynamic imports, re-exports, and ambiguous basenames, so every result is
+stamped `resolution`/`completeness: "heuristic"`. Use them as fast triage, never
+as a correctness oracle — and never skip a full test run before merge.
+
+Each ships with a validator that measures its value against your own git history,
+the same way `eval` grades ranking:
+
+```bash
+codegraft eval-impact --last 20    # % of co-changed file pairs the graph links
+codegraft eval-symbol              # mean % of a file you skip by fetching a symbol
+codegraft eval-tests --last 30     # recall of co-changed tests from source changes
+```
 
 ### Measuring ranking quality — `codegraft eval`
 
@@ -152,15 +187,33 @@ pip install -e ".[mcp]"
 claude mcp add codegraft codegraft-mcp
 ```
 
-Two tools:
+The tools — four deterministic, free read-side tools plus one opt-in planner:
 
 - **`select_context(request, repo, subdir?)`** — the deterministic context
   bundle: ranked files + bounded snippets for a request. **No LLM call, no key,
   no per-request cost.** Hands the agent the right files instantly so it explores
-  less. This is the differentiated piece.
+  less. This is the differentiated piece, and the entry point to the loop below.
+- **`impact_of(target, repo, transitive?)`** — the files that import `target`, for
+  blast-radius triage before an edit. Free, no LLM. Heuristic.
+- **`get_symbol(name, repo, path?)`** — one definition (signature + body + span)
+  instead of a whole-file read. Free, no LLM. Heuristic location/extent.
+- **`affected_tests(changed_files, repo)`** — the tests that depend on changed
+  files, so the agent runs the relevant handful first. **Selection only — it does
+  not run anything**, and being heuristic it can miss tests.
 - **`generate_plan(request, repo, …)`** — the full structured plan via a provider.
   **Opt-in** (costs tokens / needs a key); use it when you want a reviewable plan
   artifact, not for context.
+
+They compose into one read-side loop, each tool's description cross-referencing
+the next so the agent discovers the chain from any entry point:
+
+```
+select_context(request)            # what files matter
+  → get_symbol(name, path)         # read only the region you need
+  → impact_of(file)                # before you change it, see who breaks
+  → (edit)
+  → affected_tests(changed_files)  # pick the tests to run first (then run them)
+```
 
 The server is a thin adapter over the same `analyze_repo` engine the CLI uses —
 one core, three interfaces (CLI, MCP, LLM providers).
@@ -168,15 +221,23 @@ one core, three interfaces (CLI, MCP, LLM providers).
 ### Make the agent reach for it automatically
 
 Registering the server gives the agent the *tools*; one instruction makes it
-*use* them at the right moment. Drop this into the agent's system prompt or a
-`CLAUDE.md` (project or global) so it leads with context instead of blind
-grepping:
+*use* them at the right moment. Drop this **decision tree** into the agent's
+system prompt or a `CLAUDE.md` (project or global) so it reaches for the right
+tool at each step of the read-side loop instead of falling back to blind
+grepping and whole-file reads:
 
-> When asked to plan or implement a feature, fix, or change in a local repo,
-> call the codegraft MCP tool `select_context` **first** — before manually
-> grepping or reading files — to get the ranked-relevant files and bounded
-> snippets. It's deterministic, needs no API key, and has no per-request token
-> cost. Skip it only for trivial single-file changes you can already locate.
+> ## codegraft — read-side tools
+>
+> - Planning/implementing a feature or change → `select_context` **first** (ranked
+>   files + snippets), before grepping/reading.
+> - About to edit a shared file → `impact_of` to see what depends on it.
+> - Need one function/class/selector, not the whole file → `get_symbol`, not Read.
+> - Just edited files and want fast feedback → `affected_tests` to pick the
+>   relevant tests (then run them; codegraft does not run them for you).
+>
+> All are deterministic, need no API key, and cost no request tokens. The graph
+> tools are heuristic — triage, not a guarantee. Skip them only for trivial
+> changes you can already locate.
 
 Or install the packaged **Claude Code skill** instead of pasting that by hand —
 it carries the same trigger and workflow, so the agent reaches for
