@@ -212,6 +212,142 @@ def inspect(
 
 
 @app.command()
+def impact(
+    target: str = typer.Argument(
+        ..., help="File to find dependents of (repo-relative path or bare filename)."
+    ),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to analyze.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    transitive: bool = typer.Option(
+        False, "--transitive", help="Also show the full transitive reverse closure."
+    ),
+) -> None:
+    """Show what depends on a file — blast-radius triage before you edit it.
+
+    Inverts codegraft's heuristic import graph: lists the files that import
+    `target`. Resolution is heuristic (misses dynamic imports, re-exports, and
+    ambiguous basenames), so treat it as triage, not a correctness oracle.
+    """
+
+    from codegraft.repo.discover import discover_repo
+    from codegraft.repo.graph import impact_of
+
+    try:
+        config = Config.load(repo)
+        scan = discover_repo(repo, config)
+        result = impact_of(target, scan, repo, config, transitive=transitive)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(BANNER)
+    if not result.found:
+        if result.ambiguous:
+            console.print(
+                f"[yellow]Ambiguous target[/yellow] [bold]{target}[/bold] — "
+                "matches several files:"
+            )
+            for cand in result.ambiguous:
+                console.print(f"  {cand}")
+            console.print("[dim]Re-run with a path-qualified target.[/dim]")
+            raise typer.Exit(code=1)
+        console.print(
+            f"[yellow]No candidate file[/yellow] matched [bold]{target}[/bold].\n"
+            "[dim]Pass a repo-relative path or an exact filename.[/dim]"
+        )
+        raise typer.Exit(code=1)
+
+    console.print(
+        f"\nImpact of [bold cyan]{result.resolved}[/bold cyan]  "
+        f"[dim](resolution: {result.resolution})[/dim]"
+    )
+    if not result.imported_by:
+        console.print(
+            "[dim]No files import this (heuristically) — looks like a leaf.[/dim]"
+        )
+    else:
+        console.print(
+            f"[dim]Directly imported by ({len(result.imported_by)}):[/dim]"
+        )
+        for path in result.imported_by:
+            console.print(f"  {path}")
+    if transitive and result.transitive:
+        console.print(
+            f"[dim]Transitively reaches ({len(result.transitive)} more):[/dim]"
+        )
+        for path in result.transitive:
+            console.print(f"  [dim]{path}[/dim]")
+    console.print(
+        "\n[dim]Heuristic reference scan — misses dynamic imports / re-exports. "
+        "Blast-radius triage, not a guarantee.[/dim]"
+    )
+
+
+@app.command("affected-tests")
+def affected_tests_cmd(
+    files: list[str] = typer.Argument(
+        None, help="Changed files to find dependent tests for."
+    ),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to analyze.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    since: Optional[str] = typer.Option(
+        None, "--since", help="Derive the changed set from `git diff --name-only <ref>`."
+    ),
+) -> None:
+    """Select the tests that depend on changed files (selection only — never runs them).
+
+    Reverse-reachable closure of the changed files over the import graph,
+    intersected with the repo's test files. Heuristic: false negatives are
+    possible, so this speeds the inner loop but never replaces a full-suite run
+    before merge. Running the selected tests is a separate tool's job.
+    """
+
+    from codegraft.repo.discover import discover_repo
+    from codegraft.repo.graph import affected_tests
+    from codegraft.repo.summarize import summarize
+
+    try:
+        config = Config.load(repo)
+        changed = list(files or [])
+        if since:
+            changed.extend(_changed_since(repo, since))
+        if not changed:
+            raise CodegraftError(
+                "no changed files given — pass files or --since <ref>"
+            )
+        scan = discover_repo(repo, config)
+        summary = summarize(scan)
+        result = affected_tests(changed, scan, summary, repo, config)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+
+    console.print(BANNER)
+    console.print(
+        f"\nAffected tests for {len(result.changed)} changed file(s)  "
+        f"[dim](completeness: {result.completeness})[/dim]"
+    )
+    if result.unresolved:
+        console.print(
+            f"[yellow]Not found in scan[/yellow] ({len(result.unresolved)}): "
+            + ", ".join(result.unresolved)
+        )
+    if not result.tests:
+        console.print("[dim]No dependent tests found (heuristically).[/dim]")
+    else:
+        for path in result.tests:
+            console.print(f"  {path}")
+    console.print(
+        "\n[dim]Heuristic — can miss tests. A fast-feedback hint, not a "
+        "replacement for the full suite before merge. codegraft does not run them.[/dim]"
+    )
+
+
+@app.command()
 def plan(
     request: str = typer.Argument(
         None, help="Feature request. Omit when using --request-file."
@@ -388,6 +524,109 @@ def evaluate(
         _print_eval_report(report)
 
 
+@app.command("eval-impact")
+def evaluate_impact(
+    commits: Optional[list[str]] = typer.Argument(
+        None, help="Commit SHAs to evaluate. Omit to use recent history."
+    ),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to evaluate.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    last: int = typer.Option(
+        0, "--last", help="Evaluate the most recent N commits (default 20 if no SHAs)."
+    ),
+    direct: bool = typer.Option(
+        False, "--direct",
+        help="Use only direct importers instead of the transitive reverse closure.",
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
+) -> None:
+    """Measure impact_of as a co-change predictor against git history. No model call.
+
+    For each commit, scores the fraction of its co-changed file *pairs* that the
+    import graph links — i.e. how often `impact_of` on one changed file would have
+    surfaced another. This is the baseline value of the blast-radius query.
+    """
+
+    import subprocess
+
+    from codegraft.evaluation import resolve_commits
+    from codegraft.evaluation_graph import run_impact_eval
+
+    try:
+        config = Config.load(repo)
+        shas = resolve_commits(repo, commits, last if last > 0 else 20)
+        if not shas:
+            raise CodegraftError("no commits to evaluate")
+        report = run_impact_eval(repo, config, shas, transitive=not direct)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+    except (subprocess.SubprocessError, OSError) as exc:
+        err_console.print(
+            f"[red]error:[/red] could not read git history "
+            f"(is {repo} a git repository?): {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    if as_json:
+        typer.echo(_impact_eval_json(report))
+        return
+    _print_impact_report(report)
+
+
+def _print_impact_report(report) -> None:
+    """Render an ImpactReport: per-commit pair-linkage plus aggregates."""
+
+    from rich.table import Table
+
+    console.print(BANNER)
+    mode = "transitive" if report.transitive else "direct"
+    table = Table(title=f"impact_of co-change linkage  ({mode})")
+    table.add_column("#", justify="right")
+    table.add_column("Commit")
+    table.add_column("Linked/Pairs", justify="right")
+    table.add_column("Pair-recall", justify="right")
+    table.add_column("Subject", overflow="fold")
+    for i, c in enumerate(report.cases, 1):
+        if not c.evaluable:
+            table.add_row(str(i), c.sha[:7], "0/0", "[dim]—[/dim]",
+                          f"[dim]{c.subject}  (<2 candidate files)[/dim]")
+            continue
+        table.add_row(str(i), c.sha[:7], f"{c.linked_pairs}/{c.pairs}",
+                      f"{c.pair_recall:.2f}", c.subject)
+    console.print(table)
+
+    scored = report.scored
+    console.print(
+        f"[bold]{len(scored)}[/bold] scored / {len(report.cases)} commits   "
+        f"[dim]macro[/dim] pair-recall=[green]{report.mean_pair_recall:.3f}[/green]   "
+        f"[dim]micro[/dim] pair-recall=[green]{report.micro_pair_recall:.3f}[/green]"
+    )
+    console.print(
+        "[dim]Fraction of co-changed file pairs the import graph links — "
+        "the share of blast radius impact_of would have surfaced.[/dim]"
+    )
+
+
+def _impact_eval_json(report) -> str:
+    import json
+    from dataclasses import asdict
+
+    return json.dumps(
+        {
+            "transitive": report.transitive,
+            "mean_pair_recall": report.mean_pair_recall,
+            "micro_pair_recall": report.micro_pair_recall,
+            "scored": len(report.scored),
+            "commits": len(report.cases),
+            "cases": [asdict(c) for c in report.cases],
+        },
+        indent=2,
+    )
+
+
 def _print_eval_report(report) -> None:
     """Render an EvalReport as a per-commit table plus aggregates."""
 
@@ -470,6 +709,21 @@ def _eval_json(report, ablation_off=None) -> str:
             - ablation_off.mean_reciprocal_rank,
         }
     return json.dumps(payload, indent=2)
+
+
+def _changed_since(repo: Path, ref: str) -> list[str]:
+    """Resolve ``--since <ref>`` to a changed-file list via a read-only git diff."""
+
+    import subprocess
+
+    from codegraft.repo.git_scan import diff_changed_files
+
+    try:
+        return sorted(diff_changed_files(repo, ref))
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise CodegraftError(
+            f"could not read changes since {ref} (is {repo} a git repo?): {exc}"
+        ) from exc
 
 
 def _read_request(

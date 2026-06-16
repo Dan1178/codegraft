@@ -21,6 +21,9 @@ from typing import Any
 
 from codegraft.config import Config
 from codegraft.repo.analyze import analyze_repo
+from codegraft.repo.discover import discover_repo
+from codegraft.repo.graph import affected_tests, impact_of
+from codegraft.repo.summarize import summarize
 
 
 def select_context_payload(
@@ -57,6 +60,55 @@ def select_context_payload(
             "saved_pct": round(est.saved_pct, 1),
         },
     }
+
+
+def impact_of_payload(
+    target: str, repo: str = ".", transitive: bool = False
+) -> dict[str, Any]:
+    """Reverse-dependency lookup for *target* — the files that import it.
+
+    Minimal JSON: the resolved path, its importers, and a ``resolution`` trust
+    flag. ``resolved`` is ``null`` and ``ambiguous`` is populated when the target
+    matched zero or several files, so the caller can disambiguate.
+    """
+
+    root = Path(repo)
+    config = Config.load(root)
+    scan = discover_repo(root, config)
+    result = impact_of(target, scan, root, config, transitive=transitive)
+
+    payload: dict[str, Any] = {
+        "target": result.target,
+        "resolved": result.resolved,
+        "imported_by": result.imported_by,
+        "resolution": result.resolution,
+    }
+    if transitive:
+        payload["transitive"] = result.transitive
+    if result.ambiguous:
+        payload["ambiguous"] = result.ambiguous
+    return payload
+
+
+def affected_tests_payload(
+    changed_files: list[str], repo: str = "."
+) -> dict[str, Any]:
+    """Tests that depend on *changed_files* (selection only — nothing is run)."""
+
+    root = Path(repo)
+    config = Config.load(root)
+    scan = discover_repo(root, config)
+    summary = summarize(scan)
+    result = affected_tests(changed_files, scan, summary, root, config)
+
+    payload: dict[str, Any] = {
+        "changed": result.changed,
+        "tests": result.tests,
+        "completeness": result.completeness,
+    }
+    if result.unresolved:
+        payload["unresolved"] = result.unresolved
+    return payload
 
 
 def generate_plan_payload(
@@ -100,6 +152,31 @@ def build_server() -> Any:
         trivial single-file changes you can already locate."""
 
         return select_context_payload(request, repo, subdir)
+
+    @server.tool()
+    def impact_of(
+        target: str, repo: str = ".", transitive: bool = False
+    ) -> dict[str, Any]:
+        """Call this BEFORE editing a shared file, instead of grepping for who imports
+        it. Returns the files that depend on `target` so you can judge blast radius up
+        front — a natural follow-up to `select_context` on a file you intend to change.
+        Deterministic, free, no LLM. Resolution is heuristic (misses dynamic imports /
+        re-exports / ambiguous basenames), so use it as blast-radius triage, not a
+        guarantee. `target` is a repo-relative path or a bare filename; set
+        `transitive=True` for the full reverse closure. Single-shot and bounded — not a
+        background indexer; skip it for a file you already know is a leaf."""
+
+        return impact_of_payload(target, repo, transitive)
+
+    @server.tool()
+    def affected_tests(changed_files: list[str], repo: str = ".") -> dict[str, Any]:
+        """After editing, call this to get the tests that depend on your changed files,
+        so you run the relevant handful first instead of the whole suite. Pass the file
+        list `select_context` or `impact_of` surfaced. Selection only — it does NOT run
+        anything, and being heuristic it can miss tests, so run the full suite before
+        merging. Deterministic, free, no LLM."""
+
+        return affected_tests_payload(changed_files, repo)
 
     @server.tool()
     def generate_plan(

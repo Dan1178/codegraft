@@ -132,6 +132,29 @@ def commit_changed_files(root: Path, sha: str) -> set[str]:
     }
 
 
+def diff_changed_files(root: Path, ref: str) -> set[str]:
+    """Repo-relative paths changed since *ref* (``git diff --name-only <ref>``).
+
+    Compares the working tree against *ref*, so it captures both committed and
+    uncommitted edits since that point — the natural "what have I touched" input
+    for ``affected-tests --since``. Read-only: a diff, never an execution.
+    """
+
+    result = _run_git(
+        ["-C", str(root), "diff", "--name-only", "-z", ref], timeout=30
+    )
+    if result.returncode != 0:
+        raise subprocess.SubprocessError(
+            result.stderr.decode("utf-8", "replace").strip()
+            or f"git diff {ref} failed"
+        )
+    return {
+        chunk.decode("utf-8", "surrogateescape")
+        for chunk in result.stdout.split(b"\0")
+        if chunk
+    }
+
+
 def git_scan(root: Path) -> tuple[set[str], set[str]] | None:
     """Discover files via git.
 
