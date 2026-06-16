@@ -47,10 +47,13 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   `intent-aware-role-weighting.md`): `request_intent` modulates split
   backend/frontend/neutral role weights, gated to preserve a byte-for-byte no-op
   when the request has no clear lean; templates now earn a symbol signal. Covered
-  by unit + synthetic-fixture tests. **Still needs field validation on a real
-  full-stack repo** — the home-repo eval is recall-neutral (codegraft has no
-  frontend, so the harness can't measure the win). Reproduce on oracle-rex to
-  confirm, then close.
+  by unit + synthetic-fixture tests, and **field-validated on oracle-rex
+  (2026-06-16)**: the original failing frontend request went from **2/12 → 10/12
+  frontend files** in the top-12 with the lever on (OFF reproduces the failure
+  exactly). Largely closed; one tuning thread remains — the `0.4` backend
+  down-weight is a touch aggressive (starves a frontend request's secondary "API
+  calls" sub-goal), best set against a full-stack eval fixture. See
+  `intent-aware-role-weighting.md` for the run and observations.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**

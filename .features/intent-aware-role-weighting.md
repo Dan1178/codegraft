@@ -142,6 +142,30 @@ Because the eval harness is blind to this bug, validation has three legs:
 identical on/off (0.562), MRR +0.013 with intent on — recall-neutral as expected;
 a real measurement needs a full-stack repo.
 
+**Field-validated on oracle-rex (2026-06-16).** Re-ran the original failing
+request ("migrate the plain-JS frontend to React/TS; find templates, static JS,
+API calls") via `analyze_repo`, A/B on the `use_intent_roles` toggle:
+
+| top-12          | OFF (legacy) | ON (new) |
+|-----------------|--------------|----------|
+| frontend files  | **2**        | **10**   |
+
+OFF reproduces the field failure exactly (only `static/js/app.js` + one manifest;
+the rest backend AI service/models/schemas/tests). ON surfaces `static/js/app.js`
+(#1), `templates/{fleet_mgmt,settings,tactical}.html`, `static/js/fleet_manager.js`,
+`static/css/style.css`, and `frontend/src/App.tsx`. The fix works.
+
+Two honest observations from the run:
+- **`0.4` may be slightly aggressive.** The request's "find the API calls"
+  sub-goal wants a couple of genuine backend files (`core/urls.py`,
+  `core/serializers.py`); none made ON's top-12. Down-weighting backend roles to
+  0.4 served the dominant frontend goal but starved the secondary backend one.
+  This is the tuning lever flagged below — a full-stack eval fixture would let us
+  set it empirically rather than by feel.
+- **`static/` role bump is slightly broad.** A `static/fonts/.../README.txt`
+  rode the `static` role into #6. Harmless here, but a candidate refinement:
+  scope the `static` role to asset/code extensions, not arbitrary files under it.
+
 ## Scope check
 
 Heuristic tuning of the existing explainable ranker — squarely in V1 scope. No
