@@ -100,7 +100,17 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
     (selector/class-name + custom-property tokens matched against request keywords),
     and/or recognizing an explicit "port `<file>`" mention as a near-direct hit.
     Still directional (a planning run, not an eval); fold into the same harness
-    fixture — add a `style.css` the request names explicitly.
+    fixture — add a `style.css` the request names explicitly. **Implemented
+    2026-06-16** (both candidates shipped together — see
+    `css-and-named-fixture-ranking.md`): CSS now earns a `symbol` signal from its
+    class/id/custom-property names (always-on, mirroring the template fix), and a
+    file the request names outright (`static/css/style.css`) earns a `named_file`
+    near-direct-hit boost — extracted from the *full* request, so it survives the
+    `ranking_signal` focus that was a second, independent cause of the miss (the
+    CSS clause was being truncated away before keyword extraction ever ran).
+    Toggleable via `use_named_file_boost` for `eval --ablation`. Covered by unit +
+    synthetic-fixture tests; home-repo eval recall-neutral (0.830 on/off, MRR
+    +0.033). One step remains — field re-validation on oracle-rex Phase 5.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**

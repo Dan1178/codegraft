@@ -56,6 +56,48 @@ def extract_keywords(request: str, min_len: int = 3) -> set[str]:
     }
 
 
+# Extensions that mark a token as an explicitly-named *file* in a request (e.g.
+# "port the layout from static/css/style.css"). Gating on a known extension keeps
+# ordinary prose like "version 2.0" or "e.g." from matching. Mirrors the
+# languages codegraft detects; kept local so this module stays dependency-free.
+_NAMED_FILE_EXTS: frozenset[str] = frozenset(
+    {
+        "py", "pyi", "js", "jsx", "mjs", "cjs", "ts", "tsx", "go", "rs",
+        "java", "kt", "rb", "php", "cs", "cpp", "cc", "c", "h", "hpp",
+        "swift", "scala", "sh", "sql", "html", "css", "scss", "vue",
+        "svelte", "md", "yml", "yaml", "toml", "json",
+    }
+)
+_NAMED_FILE_RE = re.compile(r"\b([\w./-]+\.([A-Za-z0-9]+))\b")
+
+
+def extract_named_files(request: str) -> set[str]:
+    """Filenames or paths a request names explicitly, e.g. ``style.css`` or
+    ``static/css/style.css`` in "port the layout from static/css/style.css".
+
+    Only tokens ending in a known source/asset/data extension match, so ordinary
+    prose is ignored. Returns both the verbatim mention and its bare basename, so
+    a candidate file can match whether the request named a full path or just a
+    filename. Lowercased for case-insensitive matching against candidate paths.
+
+    Run against the *full* request (not the focused ranking signal): a long
+    request's file mention often lives in a later clause that ``ranking_signal``
+    would otherwise truncate away.
+    """
+
+    found: set[str] = set()
+    for mention, ext in _NAMED_FILE_RE.findall(request):
+        if ext.lower() not in _NAMED_FILE_EXTS:
+            continue
+        mention = mention.lower().lstrip("./")
+        if not mention:
+            continue
+        found.add(mention)
+        if "/" in mention:
+            found.add(mention.rsplit("/", 1)[-1])
+    return found
+
+
 # Request "intent" lexicons. A request that *unambiguously* leans frontend or
 # backend lets the ranker modulate architectural role weights toward that side
 # (see repo/rank.py). Kept small and high-signal, and all tokens are >= 3 chars

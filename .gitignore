@@ -27,3 +27,6 @@ htmlcov/
 
 # codegraft output (don't commit generated plans by default)
 /plans/
+
+# Spin-off tool concepts — drafts for separate tools, not part of this repo
+/.features/spinoffs/
