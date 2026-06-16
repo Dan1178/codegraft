@@ -42,10 +42,15 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   `template`, `component`) modulate which role weights apply, so a frontend request
   down-weights backend roles instead of competing with them flat. Open. NB: this was
   a planning task in *another* repo, not a codegraft eval — treat as a directional
-  signal to reproduce in the harness, not a measured regression. **Plan drafted:
-  see `intent-aware-role-weighting.md`** (intent-modulated role weights + the
-  validation strategy, since the eval harness is blind to this — codegraft has no
-  frontend). Open.
+  signal to reproduce in the harness, not a measured regression. **Implemented
+  2026-06-15** (both fixes (a)+(b) shipped together — see
+  `intent-aware-role-weighting.md`): `request_intent` modulates split
+  backend/frontend/neutral role weights, gated to preserve a byte-for-byte no-op
+  when the request has no clear lean; templates now earn a symbol signal. Covered
+  by unit + synthetic-fixture tests. **Still needs field validation on a real
+  full-stack repo** — the home-repo eval is recall-neutral (codegraft has no
+  frontend, so the harness can't measure the win). Reproduce on oracle-rex to
+  confirm, then close.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**
