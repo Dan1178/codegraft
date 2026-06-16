@@ -54,6 +54,63 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   down-weight is a touch aggressive (starves a frontend request's secondary "API
   calls" sub-goal), best set against a full-stack eval fixture. See
   `intent-aware-role-weighting.md` for the run and observations.
+- **Third field gap — feature-specific templates and JSON data fixtures still
+  under-rank, even with intent roles ON.** Field note from the oracle-rex
+  React/TS migration (Phases 3 & 4, 2026-06-16 — real implementation `select_context`
+  runs, not a codegraft eval). With frontend intent the ranker did its job well on
+  *code*: each phase's port target and reuse targets came back at or near the top
+  (`tactical_calculator.js` #1 then `rules.js`, plus `JobResultView`,
+  `advisorSections`/`rulesCard`, `useAiJob`), at ~93–95% token savings. But two
+  classes of file the feature genuinely depended on **never made the bounded top
+  set**, and had to be opened by hand in both phases:
+  (1) the **feature-specific Django template** (`templates/tactical.html`,
+  `templates/rules.html`) — needed for the exact markup, icon paths, and tab copy
+  to port. The intent fix lifts templates *as a class*, but the single right
+  template for the feature still lost to the strong JS/TS symbol matches and fell
+  outside the cap.
+  (2) **JSON data fixtures** (`core/demo/scenarios/*.json`) — needed for the demo
+  wiring (the `unit_counts` keys, the rules-chip shape). These have *no path to
+  rank at all*: JSON is in `_NON_CODE_LANGS` (no `symbol` signal) and
+  `core/demo/scenarios/` earns no role weight (frontend or backend), so a data
+  fixture a frontend feature is built around can only ever score on a bare filename
+  match. Candidate refinements (validate each with `eval --ablation`): (a) give
+  JSON/data fixtures a lightweight content signal — match request keywords against
+  filename + top-level JSON keys — and/or treat `fixtures`/`scenarios`/`data` dirs
+  as a rankable (neutral) role; (b) when intent is frontend, give a small targeted
+  boost to a template whose name or `{% block %}`/`id=` anchors match request terms,
+  so the *specific* feature template surfaces, not just templates generically. Open.
+  NB: directional signal from another repo, not a measured eval regression —
+  reproduce in the harness (a full-stack fixture with a sibling JSON fixture + a
+  feature template) before tuning.
+  - **Follow-up (2026-06-16, oracle-rex Phase 5 — Board + Strategy).** A third
+    `select_context` run refines (1) and (2) above. The request explicitly named
+    the demo ("demo Load Sample Milty Draft Board") — and this time the **JSON
+    fixtures _did_ surface** (`core/demo/scenarios/sample_opening_board.json` #8,
+    `core/demo/responses/sample_opening_strategy.json` #7), riding a strong
+    filename signal (`filename: 18`) once the request keywords matched the file
+    *names*. So the JSON gap in (2) is **not absolute** — a data fixture can rank
+    when the request names it; it's silent only when the request describes a fixture
+    it can't name. The *durable* miss is **CSS**: the request asked to "port the
+    hex-grid CSS layout from the legacy style.css", yet `static/css/style.css` —
+    the single most important file to port for a board/layout feature — **did not
+    appear at all** (nor did the board template). CSS is the blind spot to fix
+    next: like HTML it has no symbol signal, and `static/css/` earns the `static`
+    frontend role but apparently not enough to clear a 12-file cap dominated by
+    JS/TS/Python symbol matches. Candidate: a content signal for stylesheets
+    (selector/class-name + custom-property tokens matched against request keywords),
+    and/or recognizing an explicit "port `<file>`" mention as a near-direct hit.
+    Still directional (a planning run, not an eval); fold into the same harness
+    fixture — add a `style.css` the request names explicitly. **Implemented
+    2026-06-16** (both candidates shipped together — see
+    `css-and-named-fixture-ranking.md`): CSS now earns a `symbol` signal from its
+    class/id/custom-property names (always-on, mirroring the template fix), and a
+    file the request names outright (`static/css/style.css`) earns a `named_file`
+    near-direct-hit boost — extracted from the *full* request, so it survives the
+    `ranking_signal` focus that was a second, independent cause of the miss (the
+    CSS clause was being truncated away before keyword extraction ever ran).
+    Toggleable via `use_named_file_boost` for `eval --ablation`. Covered by unit +
+    synthetic-fixture tests; home-repo eval recall-neutral (0.830 on/off, MRR
+    +0.033). One step remains — field re-validation on oracle-rex Phase 5.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**

@@ -41,6 +41,7 @@ def _is_code(path: str) -> bool:
 # --- Scoring weights (tunable). Kept as named constants so `inspect` output can
 # be read against them while tuning. ---
 W_FILENAME_HIT = 6.0     # a keyword appears in the file's own name
+W_NAMED_FILE = 8.0       # request named this exact file (e.g. "port style.css")
 W_PATH_HIT = 3.0         # a keyword appears elsewhere in the path
 W_ROLE = 1.0             # multiplier applied to per-role weights below
 W_ENTRY = 2.0            # file is an application entry point
@@ -111,6 +112,17 @@ _SYMBOL_RE = re.compile(
 _TEMPLATE_SYMBOL_RE = re.compile(
     r"{%-?\s*block\s+([A-Za-z_][\w-]*)"          # {% block content %}
     r"|<([A-Z][A-Za-z0-9]*|[a-z][\w]*-[\w-]+)\b"  # <Component> or <web-component>
+)
+
+# Stylesheet "symbols": the keyword-bearing names in a CSS file a request can
+# actually name — class selectors (`.hex-grid`), id selectors (`#board`), and
+# custom properties (`--hex-size`). Plain property names/values and numeric
+# fractions (`.5em`) are deliberately *not* matched (pure noise), mirroring how
+# the template regex skips bare `<div>` tags. Gives stylesheets a symbol signal
+# they were denied by being a "non-code" language.
+_STYLE_SYMBOL_RE = re.compile(
+    r"[.#]([A-Za-z_][\w-]*)"      # .class or #id selector
+    r"|(--[A-Za-z_][\w-]*)"        # --custom-property
 )
 
 # Import extraction for the import-edge signal. JS/TS: any module string after
@@ -240,6 +252,22 @@ def _basename(path: str) -> str:
     return path.rsplit("/", 1)[-1]
 
 
+def _named_file_hit(path: str, named_files: set[str]) -> bool:
+    """True if the request explicitly named this file — by bare basename or by a
+    path suffix, so ``static/css/style.css`` in the request matches the candidate
+    even when the repo is rooted elsewhere. ``named_files`` is already lowercased."""
+
+    lower = path.lower()
+    base = _basename(lower)
+    for mention in named_files:
+        if "/" in mention:
+            if lower == mention or lower.endswith("/" + mention):
+                return True
+        elif base == mention:
+            return True
+    return False
+
+
 def _role_score(segments: list[str], intent: str, use_intent_roles: bool) -> float:
     """Sum architectural role weights for a path's segments, modulated by intent.
 
@@ -274,6 +302,7 @@ def _role_score(segments: list[str], intent: str, use_intent_roles: bool) -> flo
 def _stage1_signals(
     path: str,
     keywords: set[str],
+    named_files: set[str],
     summary: RepoSummary,
     request_is_testy: bool,
     intent: str,
@@ -293,6 +322,12 @@ def _stage1_signals(
     path_hits = len(keywords & path_tokens)
     if path_hits:
         signals["path"] = path_hits * W_PATH_HIT
+
+    # A file the request named outright is a near-direct hit: surface it
+    # regardless of role/symbol competition, and (because this lands in stage 1)
+    # pull it into the stage-2 read set so it can earn content/symbol signals too.
+    if named_files and _named_file_hit(path, named_files):
+        signals["named_file"] = W_NAMED_FILE
 
     role = _role_score(segments, intent, use_intent_roles)
     if role:
@@ -343,8 +378,9 @@ def _stage2_signals(rel_path: str, text: str, keywords: set[str]) -> dict[str, f
         signals["content"] = min(hits, CONTENT_HIT_CAP) * W_CONTENT_HIT
 
     # Only score symbols in actual source files — not code blocks inside docs.
-    # HTML templates aren't "code" by the symbol regex, but their block names and
-    # component tags are real, request-nameable symbols, so they get their own.
+    # HTML templates and CSS aren't "code" by the symbol regex, but their block/
+    # component names and class/id/custom-property names are real, request-
+    # nameable symbols, so each "non-code" frontend language gets its own pattern.
     symbol_tokens: set[str] = set()
     if _is_code(rel_path):
         for match in _SYMBOL_RE.finditer(text):
@@ -352,6 +388,9 @@ def _stage2_signals(rel_path: str, text: str, keywords: set[str]) -> dict[str, f
     elif detect.language_of(rel_path) == "HTML":
         for block, tag in _TEMPLATE_SYMBOL_RE.findall(text):
             symbol_tokens.update(split_identifier(block or tag))
+    elif detect.language_of(rel_path) == "CSS":
+        for selector, prop in _STYLE_SYMBOL_RE.findall(text):
+            symbol_tokens.update(split_identifier(selector or prop))
 
     symbol_overlap = len(keywords & symbol_tokens)
     if symbol_overlap:
@@ -361,9 +400,20 @@ def _stage2_signals(rel_path: str, text: str, keywords: set[str]) -> dict[str, f
 
 
 def rank_files(
-    request: str, scan: RepoScan, summary: RepoSummary, config: Config
+    request: str,
+    scan: RepoScan,
+    summary: RepoSummary,
+    config: Config,
+    *,
+    named_files: set[str] | None = None,
 ) -> list[RankedFile]:
-    """Return the top relevant files for *request*, scored and explained."""
+    """Return the top relevant files for *request*, scored and explained.
+
+    *named_files* are files the request named explicitly (see
+    ``extract_named_files``); they are extracted from the *full* request by the
+    caller and passed in, because ``request`` here is the focused ranking signal
+    that may have truncated the file mention away.
+    """
 
     keywords = extract_keywords(request)
     if not keywords:
@@ -374,6 +424,10 @@ def rank_files(
     # A clear frontend/backend lean steers role weights toward that side; an
     # ambiguous request stays "none" and ranks exactly as it does today.
     intent = request_intent(keywords) if use_intent_roles else "none"
+    # The named-file boost is toggleable so `eval --ablation` can isolate it.
+    named = named_files or set()
+    if not config.analysis.use_named_file_boost:
+        named = set()
     root = Path(scan.root)
 
     # Stage 1: cheap path-based scoring over *every* candidate. We keep files
@@ -383,7 +437,7 @@ def rank_files(
     stage1: list[RankedFile] = []
     for f in scan.files:
         signals = _stage1_signals(
-            f.path, keywords, summary, request_is_testy, intent, use_intent_roles
+            f.path, keywords, named, summary, request_is_testy, intent, use_intent_roles
         )
         stage1.append(RankedFile(path=f.path, score=sum(signals.values()), signals=signals))
 

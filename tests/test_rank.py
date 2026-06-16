@@ -267,6 +267,102 @@ def test_no_intent_request_is_noop(tmp_path: Path) -> None:
     assert r_on == r_off
 
 
+def _board_repo(root: Path) -> None:
+    """A full-stack board feature: a legacy stylesheet plus competing JS/template/
+    JSON files and backend code. Mirrors the oracle-rex Phase 5 topology where the
+    one stylesheet to port lost to strong JS/Python symbol matches."""
+
+    write(root, "pyproject.toml", '[project]\ndependencies = ["django"]\n')
+    write(
+        root,
+        "static/css/style.css",
+        ".hex-grid { display: grid; }\n"
+        ".hex-cell { --hex-size: 40px; }\n",
+    )
+    write(root, "static/js/board.js", "function renderBoard() { return true; }\n")
+    write(root, "templates/board.html", "{% block board %}\n<p>board</p>\n{% endblock %}\n")
+    write(root, "core/demo/scenarios/board.json", '{"unit_counts": {}}\n')
+    write(root, "services/ai.py", "def summarize(text):\n    return text\n")
+    write(root, "models/record.py", "class Record:\n    pass\n")
+
+
+def test_stylesheet_earns_symbol_signal(tmp_path: Path) -> None:
+    """CSS — previously denied a symbol signal as a 'non-code' lang — now matches
+    request keywords against its class/id/custom-property names."""
+
+    _board_repo(tmp_path)
+    request = "port the hex-grid CSS layout"  # 'hex'/'grid' match the .hex-grid class
+    ranked = {r.path: r for r in analyze_repo(request, tmp_path, _config(tmp_path)).ranked}
+
+    assert "static/css/style.css" in ranked
+    assert ranked["static/css/style.css"].signals.get("symbol", 0) > 0
+
+
+# A long, single-line request whose first sentence (the ranking signal) is about
+# the demo and does NOT name the stylesheet — only the truncated-away second
+# clause does. Reproduces the field case where the file mention is focused out.
+_TRUNCATING_REQUEST = (
+    "Load the Sample Milty Draft Board demo and wire the strategy cards into the "
+    "existing job result view so the demo renders correctly for the end user on "
+    "first page load, including the summary panel and the per-faction breakdown "
+    "table. As part of this, port the layout from static/css/style.css."
+)
+
+
+def test_named_file_surfaces_despite_truncation(tmp_path: Path) -> None:
+    """The headline fix: a file the request names explicitly surfaces even when
+    the focusing of a long request truncates the mention out of the ranking
+    signal. Without the boost it scores zero and is dropped entirely."""
+
+    from codegraft.utils.text import ranking_signal
+
+    _board_repo(tmp_path)
+    # Guard: the focusing path is exercised and the file mention is truncated away.
+    assert len(_TRUNCATING_REQUEST) > 240
+    assert "style.css" not in ranking_signal(_TRUNCATING_REQUEST)
+
+    on = _config(tmp_path)
+    off = _config(tmp_path)
+    off.analysis.use_named_file_boost = False
+
+    ranked_on = {r.path: r for r in analyze_repo(_TRUNCATING_REQUEST, tmp_path, on).ranked}
+    ranked_off = {r.path for r in analyze_repo(_TRUNCATING_REQUEST, tmp_path, off).ranked}
+
+    css = "static/css/style.css"
+    assert css in ranked_on
+    assert ranked_on[css].signals.get("named_file", 0) > 0
+    # With the boost off the truncated request gives the stylesheet no signal at
+    # all (no keyword/role/symbol match), so it drops out — the field failure.
+    assert css not in ranked_off
+
+
+def test_named_file_boost_can_be_disabled(tmp_path: Path) -> None:
+    """The ablation toggle removes the named-file signal entirely."""
+
+    _board_repo(tmp_path)
+    config = _config(tmp_path)
+    config.analysis.use_named_file_boost = False
+    ranked = analyze_repo(_TRUNCATING_REQUEST, tmp_path, config).ranked
+
+    assert all("named_file" not in r.signals for r in ranked)
+
+
+def test_named_file_noop_when_nothing_named(tmp_path: Path) -> None:
+    """Guardrail: a request that names no file ranks identically with the boost
+    on vs off — no regression for ordinary requests."""
+
+    _board_repo(tmp_path)
+    request = "improve the draft board demo rendering"  # names no file
+
+    on = _config(tmp_path)
+    off = _config(tmp_path)
+    off.analysis.use_named_file_boost = False
+
+    r_on = [(r.path, r.score) for r in analyze_repo(request, tmp_path, on).ranked]
+    r_off = [(r.path, r.score) for r in analyze_repo(request, tmp_path, off).ranked]
+    assert r_on == r_off
+
+
 def test_template_earns_symbol_signal(tmp_path: Path) -> None:
     """HTML templates — previously denied a symbol signal as a 'non-code' lang —
     now match request keywords against their block/component names."""

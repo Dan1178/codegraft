@@ -69,6 +69,10 @@ class AnalysisConfig(BaseModel):
     # structural role bump frontend files cannot. No-op for requests with no clear
     # lean. Toggleable so `eval` can measure it on a full-stack repo.
     use_intent_roles: bool = True
+    # Treat a file the request names outright ("port static/css/style.css") as a
+    # near-direct hit, extracted from the full request so it survives the
+    # ranking-signal focus that truncates long requests. Toggleable for ablation.
+    use_named_file_boost: bool = True
 
 
 class OutputConfig(BaseModel):
@@ -152,6 +156,7 @@ include_tests_when_relevant = true
 context_char_budget = 50000
 use_import_edge = true
 use_intent_roles = true
+use_named_file_boost = true
 
 [output]
 output_dir = "plans"

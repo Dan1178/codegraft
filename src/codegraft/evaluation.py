@@ -62,6 +62,7 @@ class EvalReport:
     k: int
     use_import_edge: bool
     use_intent_roles: bool = True
+    use_named_file_boost: bool = True
     cases: list[CaseResult] = field(default_factory=list)
 
     @property
@@ -141,6 +142,7 @@ def run_eval(
     k: int = 10,
     use_import_edge: bool = True,
     use_intent_roles: bool = True,
+    use_named_file_boost: bool = True,
 ) -> EvalReport:
     """Build a gold set from each commit and score the ranker against it.
 
@@ -151,9 +153,11 @@ def run_eval(
     cfg = config.model_copy(deep=True)
     cfg.analysis.use_import_edge = use_import_edge
     cfg.analysis.use_intent_roles = use_intent_roles
+    cfg.analysis.use_named_file_boost = use_named_file_boost
 
     report = EvalReport(
-        k=k, use_import_edge=use_import_edge, use_intent_roles=use_intent_roles
+        k=k, use_import_edge=use_import_edge, use_intent_roles=use_intent_roles,
+        use_named_file_boost=use_named_file_boost,
     )
     for sha in shas:
         subject = commit_subject(root, sha)

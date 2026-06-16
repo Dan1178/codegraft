@@ -317,6 +317,10 @@ def evaluate(
         False, "--no-intent-roles",
         help="Disable intent-modulated role weights (frontend/backend lean).",
     ),
+    no_named_file: bool = typer.Option(
+        False, "--no-named-file",
+        help="Disable the explicit named-file boost (e.g. 'port style.css').",
+    ),
     ablation: bool = typer.Option(
         False, "--ablation",
         help="Score with and without the import-edge signal and show the delta.",
@@ -353,16 +357,19 @@ def evaluate(
             on = run_eval(
                 repo, config, shas, k=k,
                 use_import_edge=True, use_intent_roles=not no_intent_roles,
+                use_named_file_boost=not no_named_file,
             )
             off = run_eval(
                 repo, config, shas, k=k,
                 use_import_edge=False, use_intent_roles=not no_intent_roles,
+                use_named_file_boost=not no_named_file,
             )
         else:
             report = run_eval(
                 repo, config, shas, k=k,
                 use_import_edge=not no_import_edge,
                 use_intent_roles=not no_intent_roles,
+                use_named_file_boost=not no_named_file,
             )
     except (subprocess.SubprocessError, OSError) as exc:
         err_console.print(f"[red]error:[/red] git failed while evaluating: {exc}")
@@ -389,8 +396,10 @@ def _print_eval_report(report) -> None:
     console.print(BANNER)
     edge = "on" if report.use_import_edge else "off"
     intent = "on" if report.use_intent_roles else "off"
+    named = "on" if report.use_named_file_boost else "off"
     table = Table(
-        title=f"Ranking eval  (k={report.k}, import-edge {edge}, intent-roles {intent})"
+        title=f"Ranking eval  (k={report.k}, import-edge {edge}, "
+        f"intent-roles {intent}, named-file {named})"
     )
     table.add_column("#", justify="right")
     table.add_column("Commit")
@@ -444,6 +453,7 @@ def _eval_json(report, ablation_off=None) -> str:
             "k": rep.k,
             "use_import_edge": rep.use_import_edge,
             "use_intent_roles": rep.use_intent_roles,
+            "use_named_file_boost": rep.use_named_file_boost,
             "mean_recall_at_k": rep.mean_recall_at_k,
             "mean_reciprocal_rank": rep.mean_reciprocal_rank,
             "scored": len(rep.scored),

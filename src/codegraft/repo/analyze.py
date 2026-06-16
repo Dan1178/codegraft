@@ -17,7 +17,7 @@ from codegraft.repo.discover import discover_repo
 from codegraft.repo.rank import rank_files
 from codegraft.repo.snippets import extract_snippets
 from codegraft.repo.summarize import summarize
-from codegraft.utils.text import ranking_signal
+from codegraft.utils.text import extract_named_files, ranking_signal
 from codegraft.utils.tokens import TokenEstimate, estimate_savings
 
 
@@ -58,9 +58,13 @@ def analyze_repo(
     """
 
     signal = ranking_signal(request)
+    # Files the request names explicitly are pulled from the *full* request, not
+    # the focused signal — a long request's file mention often lives in a clause
+    # `ranking_signal` truncates away.
+    named_files = extract_named_files(request)
     scan = discover_repo(root, config, subdir=subdir)
     summary = summarize(scan)
-    ranked = rank_files(signal, scan, summary, config)
+    ranked = rank_files(signal, scan, summary, config, named_files=named_files)
     snippets = extract_snippets(signal, ranked, scan, config)
     return RepoAnalysis(
         request=request,

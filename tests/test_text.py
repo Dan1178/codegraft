@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from codegraft.utils.text import extract_keywords, ranking_signal, request_intent
+from codegraft.utils.text import (
+    extract_keywords,
+    extract_named_files,
+    ranking_signal,
+    request_intent,
+)
 
 
 def _intent(request: str) -> str:
@@ -24,6 +29,35 @@ def test_intent_none_when_ambiguous_or_absent() -> None:
     assert _intent("improve logging and error handling") == "none"
     # Both lexicons hit -> deliberately unsteered.
     assert _intent("wire the react components to the api endpoints") == "none"
+
+
+def test_named_files_basename_and_path() -> None:
+    # A bare filename and a path-qualified mention both resolve; a path mention
+    # also yields its basename so either form of candidate can match.
+    assert extract_named_files("port the layout from style.css") == {"style.css"}
+    assert extract_named_files("port static/css/style.css now") == {
+        "static/css/style.css",
+        "style.css",
+    }
+
+
+def test_named_files_only_known_extensions() -> None:
+    # Prose that merely contains dots must not be mistaken for filenames.
+    assert extract_named_files("bump to version 2.0, e.g. soon") == set()
+    assert extract_named_files("speed up by 3.5x overall") == set()
+
+
+def test_named_files_multiple_and_mixed() -> None:
+    found = extract_named_files(
+        "wire app.js and templates/board.html to core/demo/scenarios/board.json"
+    )
+    assert found == {
+        "app.js",
+        "templates/board.html",
+        "board.html",
+        "core/demo/scenarios/board.json",
+        "board.json",
+    }
 
 
 def test_short_request_passes_through() -> None:
