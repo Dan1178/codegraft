@@ -22,6 +22,38 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   `TaxonomyManagementScreen` they all import did not). Candidate fix: an
   **import-graph proximity boost** — if several top-ranked files import X, pull X
   into the bundle. Open.
+- **Second field gap — role weights are server-side-only, so frontend targets
+  under-rank in full-stack repos.** On a `select_context` for a *frontend* request
+  ("migrate the plain-JS frontend to React/TS; find templates, JS files, API
+  calls") in a Django-dominant repo (oracle-rex), the top 12 came back ~10/12
+  **backend** Python (AI service, schemas, models, migrations, constants, tests);
+  only `app.js` (#3) and one template (#9) were frontend. Root cause is structural,
+  not lexical: `_ROLE_WEIGHTS` in `rank.py` is entirely server-side vocabulary
+  (`routes/controllers/handlers/endpoints/api/views/services/models/schemas/
+  migrations/auth/core`) with **no** frontend roles — so in a full-stack repo every
+  backend file earns a `role` bump (the visible `role: 4` does much of the work)
+  that `templates/` and `static/js/` *cannot earn*, even when the request explicitly
+  names the frontend. Compounding it: HTML is in `_NON_CODE_LANGS`, so templates get
+  no `symbol` signal either. Candidate fixes (validate each with `eval --ablation` —
+  adding roles risks regressing backend-targeted queries): (a) add frontend role
+  segments (`components`, `pages`, `hooks`, `features`, `templates`, `static`, `ui`,
+  `styles`, `store`/`stores`, `composables`); (b) bigger lever, likely V2 — let
+  *intent* keywords in the request (`react`, `frontend`, `typescript`/`tsx`, `css`,
+  `template`, `component`) modulate which role weights apply, so a frontend request
+  down-weights backend roles instead of competing with them flat. Open. NB: this was
+  a planning task in *another* repo, not a codegraft eval — treat as a directional
+  signal to reproduce in the harness, not a measured regression. **Implemented
+  2026-06-15** (both fixes (a)+(b) shipped together — see
+  `intent-aware-role-weighting.md`): `request_intent` modulates split
+  backend/frontend/neutral role weights, gated to preserve a byte-for-byte no-op
+  when the request has no clear lean; templates now earn a symbol signal. Covered
+  by unit + synthetic-fixture tests, and **field-validated on oracle-rex
+  (2026-06-16)**: the original failing frontend request went from **2/12 → 10/12
+  frontend files** in the top-12 with the lever on (OFF reproduces the failure
+  exactly). Largely closed; one tuning thread remains — the `0.4` backend
+  down-weight is a touch aggressive (starves a frontend request's secondary "API
+  calls" sub-goal), best set against a full-stack eval fixture. See
+  `intent-aware-role-weighting.md` for the run and observations.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**

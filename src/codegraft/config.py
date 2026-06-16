@@ -64,6 +64,11 @@ class AnalysisConfig(BaseModel):
     # Boost files imported by already-relevant files (architectural centrality).
     # Exposed mainly so `codegraft eval --ablation` can measure its contribution.
     use_import_edge: bool = True
+    # Modulate architectural role weights by the request's frontend/backend lean,
+    # so an explicitly frontend request stops losing to backend files that earn a
+    # structural role bump frontend files cannot. No-op for requests with no clear
+    # lean. Toggleable so `eval` can measure it on a full-stack repo.
+    use_intent_roles: bool = True
 
 
 class OutputConfig(BaseModel):
@@ -146,6 +151,7 @@ always_include_manifests = true
 include_tests_when_relevant = true
 context_char_budget = 50000
 use_import_edge = true
+use_intent_roles = true
 
 [output]
 output_dir = "plans"

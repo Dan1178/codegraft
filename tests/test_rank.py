@@ -206,3 +206,81 @@ def test_summary_detects_stack(tmp_path: Path) -> None:
     assert summary.primary_language == "Python"
     assert "FastAPI" in summary.frameworks
     assert "pyproject.toml" in summary.manifests
+
+
+def _fullstack_repo(root: Path) -> None:
+    """A Django-style full-stack repo: backend Python in role dirs plus a
+    plain-JS/template frontend in `static/` and `templates/`. The frontend dirs
+    carry no backend role vocabulary — the oracle-rex topology."""
+
+    write(root, "pyproject.toml", '[project]\ndependencies = ["django"]\n')
+    write(root, "services/ai.py", "def summarize(text):\n    return text\n")
+    write(root, "models/record.py", "class Record:\n    pass\n")
+    write(root, "migrations/0001_initial.py", "OPERATIONS = []\n")
+    write(root, "static/js/app.js", "function init() { return true; }\n")
+    write(root, "templates/index.html", "{% block body %}\n<p>hi</p>\n{% endblock %}\n")
+
+
+_FRONT = ["templates/index.html", "static/js/app.js"]
+_BACK = ["services/ai.py", "models/record.py", "migrations/0001_initial.py"]
+# A request that clearly leans frontend but whose *keywords* favour neither
+# side's file contents, so the outcome is driven by role weighting.
+_FRONTEND_REQUEST = "migrate the frontend to react and typescript"
+
+
+def test_frontend_request_lifts_frontend_over_backend(tmp_path: Path) -> None:
+    """The headline fix: an explicitly frontend request ranks the frontend files
+    above the backend role dirs, instead of losing to their structural bump."""
+
+    _fullstack_repo(tmp_path)
+    ranked = {r.path: r.score for r in analyze_repo(_FRONTEND_REQUEST, tmp_path, _config(tmp_path)).ranked}
+
+    assert all(p in ranked for p in _FRONT + _BACK), ranked
+    assert min(ranked[p] for p in _FRONT) > max(ranked[p] for p in _BACK)
+
+
+def test_intent_roles_off_reproduces_backend_bias(tmp_path: Path) -> None:
+    """With the lever disabled, the backend role dirs reclaim the top — the very
+    bug this feature fixes — proving the flip is caused by intent roles."""
+
+    _fullstack_repo(tmp_path)
+    config = _config(tmp_path)
+    config.analysis.use_intent_roles = False
+    ranked = {r.path: r.score for r in analyze_repo(_FRONTEND_REQUEST, tmp_path, config).ranked}
+
+    assert max(ranked[p] for p in _BACK) > max(ranked[p] for p in _FRONT)
+
+
+def test_no_intent_request_is_noop(tmp_path: Path) -> None:
+    """The guardrail: for a request with no clear lean, the full ranking is
+    identical with intent roles on vs off (no backend-query regression)."""
+
+    _fullstack_repo(tmp_path)
+    request = "update the record handling logic"  # hits neither intent lexicon
+
+    on = _config(tmp_path)  # use_intent_roles defaults True
+    off = _config(tmp_path)
+    off.analysis.use_intent_roles = False
+
+    r_on = [(r.path, r.score) for r in analyze_repo(request, tmp_path, on).ranked]
+    r_off = [(r.path, r.score) for r in analyze_repo(request, tmp_path, off).ranked]
+    assert r_on == r_off
+
+
+def test_template_earns_symbol_signal(tmp_path: Path) -> None:
+    """HTML templates — previously denied a symbol signal as a 'non-code' lang —
+    now match request keywords against their block/component names."""
+
+    write(tmp_path, "pyproject.toml", '[project]\ndependencies = ["django"]\n')
+    write(
+        tmp_path,
+        "templates/dashboard.html",
+        "{% block dashboard %}\n<UserCard />\n{% endblock %}\n",
+    )
+    write(tmp_path, "core/util.py", "VALUE = 1\n")
+
+    request = "redesign the dashboard template"  # 'dashboard' matches the block name
+    ranked = {r.path: r for r in analyze_repo(request, tmp_path, _config(tmp_path)).ranked}
+
+    assert "templates/dashboard.html" in ranked
+    assert ranked["templates/dashboard.html"].signals.get("symbol", 0) > 0

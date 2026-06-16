@@ -2,7 +2,28 @@
 
 from __future__ import annotations
 
-from codegraft.utils.text import ranking_signal
+from codegraft.utils.text import extract_keywords, ranking_signal, request_intent
+
+
+def _intent(request: str) -> str:
+    return request_intent(extract_keywords(request))
+
+
+def test_intent_frontend_lean() -> None:
+    assert _intent("migrate the frontend to react and typescript") == "frontend"
+    assert _intent("restyle the dashboard template and css") == "frontend"
+
+
+def test_intent_backend_lean() -> None:
+    assert _intent("add a migration and a new schema for users") == "backend"
+    assert _intent("secure the auth endpoints") == "backend"
+
+
+def test_intent_none_when_ambiguous_or_absent() -> None:
+    # Neither lexicon.
+    assert _intent("improve logging and error handling") == "none"
+    # Both lexicons hit -> deliberately unsteered.
+    assert _intent("wire the react components to the api endpoints") == "none"
 
 
 def test_short_request_passes_through() -> None:

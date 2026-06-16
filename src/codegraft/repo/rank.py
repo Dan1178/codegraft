@@ -21,7 +21,12 @@ from pathlib import Path
 from codegraft.config import Config
 from codegraft.models.repo import RankedFile, RepoScan, RepoSummary
 from codegraft.repo import detect
-from codegraft.utils.text import extract_keywords, split_identifier, tokenize
+from codegraft.utils.text import (
+    extract_keywords,
+    request_intent,
+    split_identifier,
+    tokenize,
+)
 
 # Languages whose files carry meaningful def/class symbols. Docs and data files
 # (Markdown, JSON, TOML, ...) are excluded so code blocks inside a README or the
@@ -57,21 +62,55 @@ W_IMPORTED_BY = 1.5          # per relevant importer (after the ubiquity gate)
 IMPORTED_BY_UBIQUITY_MAX = 3  # more relevant importers than this ⇒ hub, not boosted
 _EDGE_IMPORTER_LIMIT = 15    # only edges from the N most-relevant files count
 
-# Architectural role hints keyed by path segment.
-_ROLE_WEIGHTS: dict[str, float] = {
+# Architectural role hints keyed by path segment, split by which *side* of the
+# stack the segment signals. Splitting matters because role weight is the largest
+# path-only signal: in a full-stack repo a backend request and a frontend request
+# used to share one backend-only vocabulary, so backend files earned a structural
+# bump frontend files structurally could not — even when the request named the
+# frontend. `request_intent` (see below) lets us modulate these by the request's
+# lean instead of competing flat.
+_BACKEND_ROLES: dict[str, float] = {
     "routes": 3.0, "route": 3.0, "router": 3.0, "controllers": 3.0,
     "controller": 3.0, "handlers": 3.0, "handler": 3.0, "endpoints": 3.0,
-    "endpoint": 3.0, "api": 2.5, "views": 2.5, "view": 2.5,
+    "endpoint": 3.0, "api": 2.5,
     "services": 2.5, "service": 2.5, "usecases": 2.5, "use_cases": 2.5,
     "domain": 2.0, "models": 2.5, "model": 2.5, "schemas": 2.5, "schema": 2.5,
     "migrations": 2.5, "migration": 2.5, "entities": 2.0, "middleware": 2.0,
-    "auth": 2.5, "core": 1.5,
+    "auth": 2.5,
 }
+_FRONTEND_ROLES: dict[str, float] = {
+    "components": 2.5, "component": 2.5, "pages": 2.5, "page": 2.5,
+    "screens": 2.5, "screen": 2.5, "templates": 2.5, "template": 2.5,
+    "hooks": 2.0, "composables": 2.0, "features": 2.0, "static": 2.0,
+    "ui": 2.0, "widgets": 2.0, "widget": 2.0, "store": 2.0, "stores": 2.0,
+    "assets": 1.5, "styles": 1.5, "style": 1.5,
+}
+# Roles that are genuinely ambiguous across the stack apply at full weight
+# regardless of intent (never modulated). `views`/`view` is Django backend
+# (`views.py`) but Vue/Nuxt frontend (`views/`); `core` is side-agnostic.
+_NEUTRAL_ROLES: dict[str, float] = {
+    "views": 2.5, "view": 2.5, "core": 1.5,
+}
+# When a request's intent opposes a (sided) role, scale that role down rather than
+# zeroing it — a frontend task that genuinely touches an API file can still
+# surface it via keyword/symbol signals. Frontend roles are gated *on* only by a
+# frontend-leaning request, which keeps the no-intent case byte-for-byte today's.
+ROLE_OPPOSING_INTENT_FACTOR = 0.4
 
 _TEST_REQUEST_TOKENS = {"test", "tests", "testing", "coverage", "regression"}
 
 _SYMBOL_RE = re.compile(
     r"\b(?:def|class|func|function|type|struct|interface|fn|const|var)\s+([A-Za-z_]\w*)"
+)
+
+# Template "symbols": the keyword-bearing names in an HTML template that a request
+# can actually name. Django/Jinja block names (`{% block content %}`) and
+# component-like custom element tags (`<UserCard>`, `<user-card>`) — but NOT plain
+# HTML tags (`<div>`), which would be pure noise. Gives templates a symbol signal
+# they were denied by being a "non-code" language.
+_TEMPLATE_SYMBOL_RE = re.compile(
+    r"{%-?\s*block\s+([A-Za-z_][\w-]*)"          # {% block content %}
+    r"|<([A-Z][A-Za-z0-9]*|[a-z][\w]*-[\w-]+)\b"  # <Component> or <web-component>
 )
 
 # Import extraction for the import-edge signal. JS/TS: any module string after
@@ -201,8 +240,44 @@ def _basename(path: str) -> str:
     return path.rsplit("/", 1)[-1]
 
 
+def _role_score(segments: list[str], intent: str, use_intent_roles: bool) -> float:
+    """Sum architectural role weights for a path's segments, modulated by intent.
+
+    With ``use_intent_roles`` off (or intent ``"none"``), this reduces exactly to
+    the legacy backend-only behaviour: backend + neutral roles at full weight,
+    frontend roles silent. A frontend-leaning request activates frontend roles and
+    scales backend roles down; a backend-leaning request scales frontend roles
+    down. Neutral roles are never modulated.
+    """
+
+    total = 0.0
+    for seg in segments:
+        seg = seg.lower()
+        if seg in _NEUTRAL_ROLES:
+            total += _NEUTRAL_ROLES[seg]
+        elif seg in _BACKEND_ROLES:
+            weight = _BACKEND_ROLES[seg]
+            if use_intent_roles and intent == "frontend":
+                weight *= ROLE_OPPOSING_INTENT_FACTOR
+            total += weight
+        elif seg in _FRONTEND_ROLES:
+            if not use_intent_roles:
+                continue  # legacy parity: frontend vocabulary did not exist
+            if intent == "frontend":
+                total += _FRONTEND_ROLES[seg]
+            elif intent == "backend":
+                total += _FRONTEND_ROLES[seg] * ROLE_OPPOSING_INTENT_FACTOR
+            # intent "none": stay silent, preserving today's ranking exactly.
+    return total
+
+
 def _stage1_signals(
-    path: str, keywords: set[str], summary: RepoSummary, request_is_testy: bool
+    path: str,
+    keywords: set[str],
+    summary: RepoSummary,
+    request_is_testy: bool,
+    intent: str,
+    use_intent_roles: bool,
 ) -> dict[str, float]:
     """Path/structure-only signals — no file read."""
 
@@ -219,7 +294,7 @@ def _stage1_signals(
     if path_hits:
         signals["path"] = path_hits * W_PATH_HIT
 
-    role = sum(_ROLE_WEIGHTS.get(seg.lower(), 0.0) for seg in segments)
+    role = _role_score(segments, intent, use_intent_roles)
     if role:
         signals["role"] = role * W_ROLE
 
@@ -268,13 +343,19 @@ def _stage2_signals(rel_path: str, text: str, keywords: set[str]) -> dict[str, f
         signals["content"] = min(hits, CONTENT_HIT_CAP) * W_CONTENT_HIT
 
     # Only score symbols in actual source files — not code blocks inside docs.
+    # HTML templates aren't "code" by the symbol regex, but their block names and
+    # component tags are real, request-nameable symbols, so they get their own.
+    symbol_tokens: set[str] = set()
     if _is_code(rel_path):
-        symbol_tokens: set[str] = set()
         for match in _SYMBOL_RE.finditer(text):
             symbol_tokens.update(split_identifier(match.group(1)))
-        symbol_overlap = len(keywords & symbol_tokens)
-        if symbol_overlap:
-            signals["symbol"] = symbol_overlap * W_SYMBOL
+    elif detect.language_of(rel_path) == "HTML":
+        for block, tag in _TEMPLATE_SYMBOL_RE.findall(text):
+            symbol_tokens.update(split_identifier(block or tag))
+
+    symbol_overlap = len(keywords & symbol_tokens)
+    if symbol_overlap:
+        signals["symbol"] = symbol_overlap * W_SYMBOL
 
     return signals
 
@@ -289,6 +370,10 @@ def rank_files(
         return []
 
     request_is_testy = bool(keywords & _TEST_REQUEST_TOKENS)
+    use_intent_roles = config.analysis.use_intent_roles
+    # A clear frontend/backend lean steers role weights toward that side; an
+    # ambiguous request stays "none" and ranks exactly as it does today.
+    intent = request_intent(keywords) if use_intent_roles else "none"
     root = Path(scan.root)
 
     # Stage 1: cheap path-based scoring over *every* candidate. We keep files
@@ -297,7 +382,9 @@ def rank_files(
     # dropping them here would prevent them from ever being read in stage 2.
     stage1: list[RankedFile] = []
     for f in scan.files:
-        signals = _stage1_signals(f.path, keywords, summary, request_is_testy)
+        signals = _stage1_signals(
+            f.path, keywords, summary, request_is_testy, intent, use_intent_roles
+        )
         stage1.append(RankedFile(path=f.path, score=sum(signals.values()), signals=signals))
 
     stage1.sort(key=lambda r: (-r.score, r.path))

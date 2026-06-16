@@ -61,6 +61,7 @@ class EvalReport:
 
     k: int
     use_import_edge: bool
+    use_intent_roles: bool = True
     cases: list[CaseResult] = field(default_factory=list)
 
     @property
@@ -139,17 +140,21 @@ def run_eval(
     *,
     k: int = 10,
     use_import_edge: bool = True,
+    use_intent_roles: bool = True,
 ) -> EvalReport:
     """Build a gold set from each commit and score the ranker against it.
 
-    *config* is copied before the import-edge toggle is applied, so the caller's
-    object is never mutated (the ablation runs both ways off one config).
+    *config* is copied before the ranking toggles are applied, so the caller's
+    object is never mutated (an ablation runs both ways off one config).
     """
 
     cfg = config.model_copy(deep=True)
     cfg.analysis.use_import_edge = use_import_edge
+    cfg.analysis.use_intent_roles = use_intent_roles
 
-    report = EvalReport(k=k, use_import_edge=use_import_edge)
+    report = EvalReport(
+        k=k, use_import_edge=use_import_edge, use_intent_roles=use_intent_roles
+    )
     for sha in shas:
         subject = commit_subject(root, sha)
         gold = commit_changed_files(root, sha)
