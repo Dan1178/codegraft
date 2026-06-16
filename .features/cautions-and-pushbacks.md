@@ -42,7 +42,10 @@ lexical overlap is naive: "add RBAC" will match every file containing "user".
   `template`, `component`) modulate which role weights apply, so a frontend request
   down-weights backend roles instead of competing with them flat. Open. NB: this was
   a planning task in *another* repo, not a codegraft eval — treat as a directional
-  signal to reproduce in the harness, not a measured regression.
+  signal to reproduce in the harness, not a measured regression. **Plan drafted:
+  see `intent-aware-role-weighting.md`** (intent-modulated role weights + the
+  validation strategy, since the eval harness is blind to this — codegraft has no
+  frontend). Open.
 
 ## 2. The `ImplementationPlan` schema is large (15 fields, nested)
 **Status: MATERIALIZED then RESOLVED.**
