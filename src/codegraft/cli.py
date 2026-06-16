@@ -681,6 +681,100 @@ def evaluate_symbol(
     )
 
 
+@app.command("eval-tests")
+def evaluate_tests(
+    commits: Optional[list[str]] = typer.Argument(
+        None, help="Commit SHAs to evaluate. Omit to use recent history."
+    ),
+    repo: Path = typer.Option(
+        Path("."), "--repo", help="Repository root to evaluate.",
+        file_okay=False, dir_okay=True, resolve_path=True,
+    ),
+    last: int = typer.Option(
+        0, "--last", help="Evaluate the most recent N commits (default 30 if no SHAs)."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit the report as JSON."),
+) -> None:
+    """Measure affected_tests selection recall against git history. No model call.
+
+    For commits that changed source *and* tests, scores the fraction of changed
+    tests that `affected_tests` on the changed source would have selected — the
+    false-negative risk made measurable.
+    """
+
+    import subprocess
+
+    from codegraft.evaluation import resolve_commits
+    from codegraft.evaluation_graph import run_tests_eval
+
+    try:
+        config = Config.load(repo)
+        shas = resolve_commits(repo, commits, last if last > 0 else 30)
+        if not shas:
+            raise CodegraftError("no commits to evaluate")
+        report = run_tests_eval(repo, config, shas)
+    except CodegraftError as exc:
+        err_console.print(f"[red]error:[/red] {exc}")
+        raise typer.Exit(code=1)
+    except (subprocess.SubprocessError, OSError) as exc:
+        err_console.print(
+            f"[red]error:[/red] could not read git history "
+            f"(is {repo} a git repository?): {exc}"
+        )
+        raise typer.Exit(code=1)
+
+    if as_json:
+        import json
+        from dataclasses import asdict
+
+        typer.echo(json.dumps(
+            {
+                "mean_recall": report.mean_recall,
+                "micro_recall": report.micro_recall,
+                "scored": len(report.scored),
+                "commits": len(report.cases),
+                "cases": [asdict(c) for c in report.cases],
+            },
+            indent=2,
+        ))
+        return
+    _print_tests_report(report)
+
+
+def _print_tests_report(report) -> None:
+    """Render a TestSelectReport: per-commit test-selection recall plus aggregates."""
+
+    from rich.table import Table
+
+    console.print(BANNER)
+    table = Table(title="affected_tests selection recall")
+    table.add_column("#", justify="right")
+    table.add_column("Commit")
+    table.add_column("Selected/Gold", justify="right")
+    table.add_column("Recall", justify="right")
+    table.add_column("Subject", overflow="fold")
+    for i, c in enumerate(report.cases, 1):
+        if not c.evaluable:
+            why = "no test change" if c.gold_tests == 0 else "no source change"
+            table.add_row(str(i), c.sha[:7], "[dim]—[/dim]", "[dim]—[/dim]",
+                          f"[dim]{c.subject}  ({why})[/dim]")
+            continue
+        table.add_row(str(i), c.sha[:7], f"{c.selected}/{c.gold_tests}",
+                      f"{c.recall:.2f}", c.subject)
+    console.print(table)
+
+    scored = report.scored
+    console.print(
+        f"[bold]{len(scored)}[/bold] scored / {len(report.cases)} commits   "
+        f"[dim]macro[/dim] recall=[green]{report.mean_recall:.3f}[/green]   "
+        f"[dim]micro[/dim] recall=[green]{report.micro_recall:.3f}[/green]"
+    )
+    console.print(
+        "[dim]Share of co-changed tests affected_tests would have selected. "
+        "Below 1.0 is the false-negative risk — never skip the full suite at merge.[/dim]"
+    )
+
+
 def _print_impact_report(report) -> None:
     """Render an ImpactReport: per-commit pair-linkage plus aggregates."""
 

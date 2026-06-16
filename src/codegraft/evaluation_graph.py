@@ -9,6 +9,11 @@ that it runs.
   the file *pairs* that real commits changed together, how many are linked by an
   import path? That is exactly "would ``impact_of`` on one of them have surfaced
   the other" — the blast-radius claim, measured against history.
+- :func:`run_tests_eval` scores ``affected_tests`` as a **test-selection
+  predictor**: when a commit changed both source and test files, what share of the
+  changed *tests* would ``affected_tests`` on the changed *source* have selected?
+  That is the false-negative risk made measurable — the headline caveat, in a
+  number.
 
 Like ``evaluation.py`` this is deliberately model-free and reproducible (no API
 key, no LLM), and carries the same honest caveat: the graph is built over the
@@ -28,9 +33,10 @@ from pathlib import Path
 
 from codegraft.config import Config
 from codegraft.repo.discover import discover_repo
-from codegraft.repo.graph import reverse_closure
+from codegraft.repo.graph import _is_test_path, affected_tests, reverse_closure
 from codegraft.repo.git_scan import commit_changed_files, commit_subject
 from codegraft.repo.imports import ImportGraph, build_import_graph
+from codegraft.repo.summarize import summarize
 
 
 @dataclass
@@ -141,5 +147,84 @@ def run_impact_eval(
                 pairs=len(pairs),
                 linked_pairs=linked,
             )
+        )
+    return report
+
+
+@dataclass
+class AffectedTestsCase:
+    """How well ``affected_tests`` recovered one commit's co-changed tests."""
+
+    sha: str
+    subject: str
+    changed_source: int      # changed non-test candidate files (the input)
+    gold_tests: int          # changed test files that are candidates (the target)
+    selected: int            # gold tests affected_tests would have selected
+
+    @property
+    def evaluable(self) -> bool:
+        """Needs both a source change to predict *from* and a test change to find."""
+
+        return self.gold_tests > 0 and self.changed_source > 0
+
+    @property
+    def recall(self) -> float:
+        return self.selected / self.gold_tests if self.gold_tests else 0.0
+
+
+@dataclass
+class AffectedTestsReport:
+    """Per-commit test-selection recall plus aggregates."""
+
+    cases: list[AffectedTestsCase] = field(default_factory=list)
+
+    @property
+    def scored(self) -> list[AffectedTestsCase]:
+        return [c for c in self.cases if c.evaluable]
+
+    @property
+    def mean_recall(self) -> float:
+        scored = self.scored
+        return sum(c.recall for c in scored) / len(scored) if scored else 0.0
+
+    @property
+    def micro_recall(self) -> float:
+        total = sum(c.gold_tests for c in self.scored)
+        hit = sum(c.selected for c in self.scored)
+        return hit / total if total else 0.0
+
+
+def run_tests_eval(
+    root: Path, config: Config, shas: list[str]
+) -> AffectedTestsReport:
+    """Score ``affected_tests`` against history: for commits that changed source
+    *and* tests, what fraction of the changed tests would selection have caught?
+
+    Feeds only the changed **source** files (so recovering the changed tests isn't
+    trivial) and measures recall of the changed test files. The graph and summary
+    are request-independent, so they are built once and reused across commits.
+    """
+
+    scan = discover_repo(root, config)
+    summary = summarize(scan)
+    graph = build_import_graph(scan, root, config)
+    candidates = {f.path for f in scan.files}
+    test_paths = set(summary.test_paths)
+
+    report = AffectedTestsReport()
+    for sha in shas:
+        subject = commit_subject(root, sha)
+        changed = commit_changed_files(root, sha) & candidates
+        gold_tests = {p for p in changed if _is_test_path(p, test_paths)}
+        source = sorted(changed - gold_tests)
+        if not gold_tests or not source:
+            report.cases.append(
+                AffectedTestsCase(sha, subject, len(source), len(gold_tests), 0)
+            )
+            continue
+        result = affected_tests(source, scan, summary, root, config, graph=graph)
+        selected = gold_tests & set(result.tests)
+        report.cases.append(
+            AffectedTestsCase(sha, subject, len(source), len(gold_tests), len(selected))
         )
     return report
