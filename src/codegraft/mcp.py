@@ -188,12 +188,16 @@ def build_server() -> Any:
     def impact_of(
         target: str, repo: str = ".", transitive: bool = False
     ) -> dict[str, Any]:
-        """Call this BEFORE editing a shared file, instead of grepping for who imports
-        it. Returns the files that depend on `target` so you can judge blast radius up
-        front — a natural follow-up to `select_context` on a file you intend to change.
-        Deterministic, free, no LLM. Resolution is heuristic (misses dynamic imports /
-        re-exports / ambiguous basenames), so use it as blast-radius triage, not a
-        guarantee. `target` is a repo-relative path or a bare filename; set
+        """Call this BEFORE a risky change to a shared file, to judge blast radius —
+        the files that depend on `target`, so you know what to re-verify after editing.
+        This does NOT replace grep: use grep to find and update the actual call sites;
+        use `impact_of` to decide whether a change is risky enough to warrant caution
+        and which downstream files to re-check. (So reach for it on a shared/exported
+        symbol or a widely-imported module, not when you just need to list call sites —
+        that's grep.) A natural follow-up to `select_context` on a file you intend to
+        change. Deterministic, free, no LLM. Resolution is heuristic (misses dynamic
+        imports / re-exports / ambiguous basenames), so use it as blast-radius triage,
+        not a guarantee. `target` is a repo-relative path or a bare filename; set
         `transitive=True` for the full reverse closure. Single-shot and bounded — not a
         background indexer; skip it for a file you already know is a leaf."""
 
@@ -203,13 +207,16 @@ def build_server() -> Any:
     def get_symbol(
         name: str, repo: str = ".", path: str | None = None
     ) -> dict[str, Any]:
-        """Call this instead of reading a whole file when you need one
-        function/class/CSS selector — a natural follow-up to `select_context` once it
-        points you at a file. Returns just that definition: signature, body, and a
-        line-numbered snippet. Free, no LLM, tiny payload. Heuristic location and
-        extent (not compiler-accurate) — for exact cross-file resolution use your
-        editor's go-to-definition. `name` is style-insensitive (adminPanel matches
-        admin_panel); pass `path` to scope to one file, else all matches are returned."""
+        """Call this when you need one function/class/CSS selector from a LARGE file —
+        prefer it over `Read` when the file is big (well over a screenful) and you know
+        the symbol name. For a small file a plain `Read` is fine and gives more
+        surrounding context, so don't force `get_symbol` there. A natural follow-up to
+        `select_context` once it points you at a (large) file. Returns just that
+        definition: signature, body, and a line-numbered snippet. Free, no LLM, tiny
+        payload. Heuristic location and extent (not compiler-accurate) — for exact
+        cross-file resolution use your editor's go-to-definition. `name` is
+        style-insensitive (adminPanel matches admin_panel); pass `path` to scope to one
+        file, else all matches are returned."""
 
         return get_symbol_payload(name, repo, path)
 

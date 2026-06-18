@@ -107,13 +107,16 @@ Useful flags: `--repo`, `--subdir`, `--request-file`, `--provider anthropic|open
 ### Read-side context tools — `impact`, `symbol`, `affected-tests`
 
 `select_context` answers "what files matter for this request?" These three answer
-the *next* questions in a read-side loop, each replacing a slower habit — all
-deterministic, free, no model call, no key:
+the *next* questions in a read-side loop — all deterministic, free, no model
+call, no key:
 
 - **`codegraft impact <file> [--transitive]`** — the files that import `<file>`,
-  so you gauge blast radius *before* editing instead of grepping for importers.
+  so you gauge blast radius *before* a risky change. Complements grep rather than
+  replacing it: grep finds and updates the actual call sites; `impact` tells you
+  how far the change reaches and what to re-verify.
 - **`codegraft symbol <name> [--in <file>]`** — one definition (signature + body +
-  span) instead of `Read`-ing a whole file for one function/class/selector.
+  span) from a *large* file, instead of `Read`-ing the whole thing. For a small
+  file, a plain `Read` is fine and gives more context.
 - **`codegraft affected-tests <files…> [--since <ref>]`** — the tests that
   (transitively) depend on changed files, so you run the relevant handful first.
   *Selection only — codegraft does not run them.*
@@ -227,9 +230,11 @@ Four deterministic, free read-side tools plus one opt-in planner:
   no per-request cost.** Hands the agent the right files instantly so it explores
   less. This is the differentiated piece, and the entry point to the loop below.
 - **`impact_of(target, repo, transitive?)`** — the files that import `target`, for
-  blast-radius triage before an edit. Free, no LLM. Heuristic.
+  blast-radius triage before a risky change. Complements grep (grep finds the call
+  sites; this gauges reach + what to re-verify). Free, no LLM. Heuristic.
 - **`get_symbol(name, repo, path?)`** — one definition (signature + body + span)
-  instead of a whole-file read. Free, no LLM. Heuristic location/extent.
+  from a *large* file, instead of a whole-file read (a plain read is fine for a
+  small file). Free, no LLM. Heuristic location/extent.
 - **`affected_tests(changed_files, repo)`** — the tests that depend on changed
   files, so the agent runs the relevant handful first. **Selection only — it does
   not run anything**, and being heuristic it can miss tests.
@@ -242,8 +247,8 @@ the next so the agent discovers the chain from any entry point:
 
 ```
 select_context(request)            # what files matter
-  → get_symbol(name, path)         # read only the region you need
-  → impact_of(file)                # before you change it, see who breaks
+  → get_symbol(name, path)         # one symbol from a LARGE file (Read is fine for small ones)
+  → impact_of(file)                # blast radius before a risky change (grep still finds call sites)
   → (edit)
   → affected_tests(changed_files)  # pick the tests to run first (then run them)
 ```
@@ -263,8 +268,11 @@ grepping and whole-file reads:
 >
 > - Planning/implementing a feature or change → `select_context` **first** (ranked
 >   files + snippets), before grepping/reading.
-> - About to edit a shared file → `impact_of` to see what depends on it.
-> - Need one function/class/selector, not the whole file → `get_symbol`, not Read.
+> - About to make a *risky* change to a shared file/symbol → `impact_of` to gauge
+>   blast radius (what to re-verify). Complements grep — grep still finds and
+>   updates the call sites; `impact_of` tells you how far the change reaches.
+> - Need one function/class/selector from a *large* file → `get_symbol`, not a
+>   whole-file Read (for a small file, a plain Read is fine and gives more context).
 > - Just edited files and want fast feedback → `affected_tests` to pick the
 >   relevant tests (then run them; codegraft does not run them for you).
 >
