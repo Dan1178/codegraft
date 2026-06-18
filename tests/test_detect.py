@@ -27,6 +27,29 @@ def test_entry_points_and_tests() -> None:
     assert "tests" in detect.find_test_paths(paths)
 
 
+def test_find_test_paths_recognizes_js_ts_test_matrix() -> None:
+    """Co-located `*.test.*` / `*.spec.*` files across the JS/TS extensions are
+    tests — including the `.tsx`/`.jsx` variants that React component tests use
+    (the omission that made `affected_tests` drop them)."""
+    paths = [
+        "src/components/Board.test.tsx",
+        "src/components/Board.tsx",
+        "src/util/fleet.test.ts",
+        "src/util/calc.spec.tsx",
+        "src/util/legacy.spec.js",
+        "src/util/widget.jsx",  # not a test
+        "src/util/data.test.json",  # not a JS/TS file → not a test
+    ]
+    tests = detect.find_test_paths(paths)
+    assert "src/components/Board.test.tsx" in tests
+    assert "src/util/fleet.test.ts" in tests
+    assert "src/util/calc.spec.tsx" in tests
+    assert "src/util/legacy.spec.js" in tests
+    assert "src/components/Board.tsx" not in tests
+    assert "src/util/widget.jsx" not in tests
+    assert "src/util/data.test.json" not in tests
+
+
 def test_build_tree_depth_and_width() -> None:
     paths = [f"src/pkg/mod{i}.py" for i in range(30)]
     tree = build_tree(paths, max_depth=2, max_entries=20)

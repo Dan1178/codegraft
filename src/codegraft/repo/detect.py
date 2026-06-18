@@ -168,6 +168,21 @@ def find_entry_points(paths: list[str]) -> list[str]:
     return sorted(found, key=lambda p: (p.count("/"), p))
 
 
+# JS/TS source extensions that carry `.test.`/`.spec.` test files. Kept in step
+# with imports._JS_EXTS so "what counts as a test" and "what resolves as a module"
+# don't drift — the omission of the `x`/`jsx` variants here used to make
+# `affected_tests` and the ranking `test` signal silently ignore React component
+# tests (`*.test.tsx`), the dominant test form on a TS frontend.
+_JS_TS_EXTS = {"ts", "tsx", "js", "jsx", "mjs", "cjs"}
+
+
+def _is_js_ts_test(base: str) -> bool:
+    """True for `*.test.{ts,tsx,js,jsx,mjs,cjs}` and the `*.spec.*` variants."""
+
+    stem, _, ext = base.rpartition(".")
+    return ext in _JS_TS_EXTS and (stem.endswith(".test") or stem.endswith(".spec"))
+
+
 def find_test_paths(paths: list[str]) -> list[str]:
     """Distinct top-level-ish directories/files that look like tests."""
 
@@ -178,7 +193,8 @@ def find_test_paths(paths: list[str]) -> list[str]:
         is_test = (
             any(seg in {"tests", "test", "__tests__", "spec"} for seg in segments)
             or base.startswith("test_")
-            or base.endswith(("_test.go", "_test.py", ".test.ts", ".test.js", ".spec.ts"))
+            or base.endswith(("_test.go", "_test.py"))
+            or _is_js_ts_test(base)
         )
         if is_test:
             # Record the test root directory if there is one, else the file.

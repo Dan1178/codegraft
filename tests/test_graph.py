@@ -193,6 +193,38 @@ def test_affected_tests_selects_transitive_dependent(tmp_path: Path) -> None:
     assert result.completeness == "heuristic"
 
 
+def _react_tested_repo(root: Path) -> None:
+    """A React component with a co-located ``*.test.tsx`` that imports it."""
+
+    write(root, "package.json", '{"dependencies": {"react": "*"}}\n')
+    write(root, "src/components/Board.tsx", "export function Board() { return null; }\n")
+    write(
+        root,
+        "src/components/Board.test.tsx",
+        "import { Board } from './Board';\ntest('renders', () => { Board(); });\n",
+    )
+
+
+def test_affected_tests_selects_tsx_component_test(tmp_path: Path) -> None:
+    """A React ``*.test.tsx`` importing a changed ``*.tsx`` is selected.
+
+    Regression for ``find_test_paths`` omitting the ``.tsx``/``.spec`` test
+    extensions: the reverse edge was always present, but the test was filtered out
+    because it wasn't classified as a test — so ``affected_tests`` (and the ranking
+    ``test`` signal) silently ignored React component tests, the dominant test form
+    on a TS frontend.
+    """
+
+    _react_tested_repo(tmp_path)
+    scan, config = _scan(tmp_path)
+    summary = summarize(scan)
+
+    result = affected_tests(["src/components/Board.tsx"], scan, summary, tmp_path, config)
+
+    assert result.tests == ["src/components/Board.test.tsx"]
+    assert result.completeness == "heuristic"
+
+
 def test_affected_tests_no_dependents_is_empty(tmp_path: Path) -> None:
     """A changed file with no dependent tests yields an empty list, not an error."""
 
