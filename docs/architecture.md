@@ -71,9 +71,25 @@ ranked files with a per-signal breakdown — so ranking is debuggable, not magic
 `repo/analyze.py` (`analyze_repo → RepoAnalysis`) is the deterministic core.
 Three thin adapters consume it, none owning logic the others need:
 `cli.py` (human interface), `mcp.py` (agent interface — an MCP server exposing
-`select_context` free/deterministic and `generate_plan` opt-in), and
+the free/deterministic read-side tools `select_context` / `impact_of` /
+`get_symbol` / `affected_tests` plus the opt-in `generate_plan`), and
 `providers/*` (the LLM interface). Adding the MCP server was ~one module over
 the existing core — the payoff of isolating the engine.
+
+### 2b. Read-side query tools (`repo/imports.py`, `graph.py`, `symbols.py`)
+A second family of consumers reuses the analysis layer's machinery but bypasses
+the provider entirely — deterministic, model-free queries pointed at the same
+"what should I look at?" mission. The import resolver that powers ranking's
+`imported_by` signal was extracted from `rank.py` into `repo/imports.py`
+(`build_import_graph` → forward/reverse edges); `rank.py` re-imports it unchanged,
+so the ranking heuristic is byte-for-byte the same. On top of that graph:
+`impact_of` (reverse dependencies — blast-radius triage), `affected_tests`
+(reverse closure ∩ the repo's test files — *selection only, never execution*), and
+`get_symbol` (`repo/symbols.py` — the bounded snippet extractor at symbol
+granularity). All three are heuristic and stamp `resolution`/`completeness:
+"heuristic"`; each surfaces through both `cli.py` and `mcp.py`, and each has a
+git-history validator (`evaluation_graph.py`, `evaluation_symbol.py`) that
+baselines its value the way `evaluation.py` grades ranking.
 
 ### 3. Provider abstraction (`providers/`)
 `PlanProvider` is a one-method protocol: `generate_plan(PlanningRequest) ->
