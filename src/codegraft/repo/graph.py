@@ -8,9 +8,11 @@ two related questions an agent has *before* it edits:
 
 Both are the transpose of the forward import scan codegraft already runs for
 ranking, so they cost an O(candidates) graph build and no model call. Resolution
-is heuristic (the scan misses dynamic imports / re-exports / ambiguous
-basenames), so every result is stamped ``resolution: "heuristic"`` — blast-radius
-triage, never a correctness oracle.
+is heuristic (the scan still misses dynamic imports / ambiguous basenames), so
+every result is stamped ``resolution: "heuristic"`` — blast-radius triage, never
+a correctness oracle. ``impact_of`` does follow JS/TS barrel re-exports
+(``export … from``), surfacing consumers that reach a target through a barrel in
+a dedicated ``via_reexport`` bucket.
 """
 
 from __future__ import annotations
@@ -80,13 +82,43 @@ def reverse_closure(graph: ImportGraph, seeds: set[str]) -> set[str]:
     return reached
 
 
+def reexport_exposers(graph: ImportGraph, target: str) -> set[str]:
+    """Barrels that re-export *target*, transitively (excludes *target* itself).
+
+    A reverse-BFS over ``graph.reexporters_of`` (forwarding edges only): if a
+    barrel ``B`` does ``export … from target`` and another barrel ``C`` does
+    ``export … from B``, both expose *target*'s symbols, so an importer of either
+    is an effective dependent. The ``reached`` set makes re-export cycles
+    terminate.
+    """
+
+    reached: set[str] = set()
+    stack = [target]
+    while stack:
+        node = stack.pop()
+        for barrel in graph.reexporters_of(node):
+            if barrel not in reached and barrel != target:
+                reached.add(barrel)
+                stack.append(barrel)
+    return reached
+
+
 @dataclass
 class ImpactResult:
-    """The blast radius of a target file: who imports it, directly and beyond."""
+    """The blast radius of a target file: who imports it, directly and beyond.
+
+    The three importer buckets partition the radius by directness, no overlap:
+    ``imported_by`` literally references the target; ``via_reexport`` reaches it
+    only through one or more transparent barrel ``export … from`` chains (so it is
+    *effectively* direct — the case a default, non-transitive query would
+    otherwise miss); ``transitive`` is the remaining deeper reverse closure,
+    populated only when ``transitive=True``.
+    """
 
     target: str                              # the raw target as asked
     resolved: str | None                     # the candidate it resolved to, if unique
-    imported_by: list[str] = field(default_factory=list)   # direct importers, sorted
+    imported_by: list[str] = field(default_factory=list)   # direct (literal) importers, sorted
+    via_reexport: list[str] = field(default_factory=list)  # reach target only through barrel re-exports
     transitive: list[str] = field(default_factory=list)    # further reverse closure
     ambiguous: list[str] = field(default_factory=list)     # candidates when target was ambiguous
     resolution: str = "heuristic"
@@ -122,12 +154,33 @@ def impact_of(
         return ImpactResult(target=target, resolved=None, ambiguous=candidates)
 
     direct = sorted(graph.importers_of(resolved))
+    direct_set = set(direct)
+
+    # Barrel-transparent consumers: importers of any barrel that (transitively)
+    # re-exports the target, plus the transitive barrels themselves. The
+    # first-level barrels are literal importers already (the `export … from` is
+    # also an import edge), so they fall out via the `- direct_set` below; what
+    # remains is the consumers a plain `import { X } from '<barrel>'` would hide.
+    exposers = reexport_exposers(graph, resolved)
+    via_set: set[str] = set(exposers)
+    for barrel in exposers:
+        via_set |= graph.importers_of(barrel)
+    via_set -= direct_set
+    via_set.discard(resolved)
+    via = sorted(via_set)
+
     trans: list[str] = []
     if transitive:
         closure = reverse_closure(graph, {resolved})
-        trans = sorted(closure - set(direct))
+        # Keep the buckets disjoint: anything already surfaced as direct or
+        # via-barrel is not repeated in the deeper-closure bucket.
+        trans = sorted(closure - direct_set - via_set)
     return ImpactResult(
-        target=target, resolved=resolved, imported_by=direct, transitive=trans
+        target=target,
+        resolved=resolved,
+        imported_by=direct,
+        via_reexport=via,
+        transitive=trans,
     )
 
 

@@ -273,6 +273,12 @@ def impact(
         )
         for path in result.imported_by:
             console.print(f"  {path}")
+    if result.via_reexport:
+        console.print(
+            f"[dim]Reaches it through a barrel re-export ({len(result.via_reexport)}):[/dim]"
+        )
+        for path in result.via_reexport:
+            console.print(f"  {path}")
     if transitive and result.transitive:
         console.print(
             f"[dim]Transitively reaches ({len(result.transitive)} more):[/dim]"
@@ -280,7 +286,7 @@ def impact(
         for path in result.transitive:
             console.print(f"  [dim]{path}[/dim]")
     console.print(
-        "\n[dim]Heuristic reference scan — misses dynamic imports / re-exports. "
+        "\n[dim]Heuristic reference scan — misses dynamic imports. "
         "Blast-radius triage, not a guarantee.[/dim]"
     )
 
