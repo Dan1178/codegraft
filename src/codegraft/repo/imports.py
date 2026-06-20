@@ -5,12 +5,16 @@ import-edge signal *and* the on-demand reverse-dependency queries
 (``impact_of`` / ``affected_tests``). It is deliberately a **heuristic reference
 scan, not an AST**: JS/TS relative and ``@/`` alias specifiers resolve precisely;
 bare packages and Python dotted modules fall back to an *unambiguous* basename
-match. It misses dynamic imports, re-exports, and ambiguous basenames by design —
-callers stamp their results ``resolution: "heuristic"`` accordingly.
+match. It still misses dynamic imports and ambiguous basenames by design — callers
+stamp their results ``resolution: "heuristic"`` accordingly. JS/TS barrel
+re-exports (``export … from``) *are* now tracked, as a forwarding edge map that
+lets ``impact_of`` see consumers that import a target only through a barrel.
 
 The public surface is :func:`build_import_graph`, which turns a scan into a
-forward/reverse edge map. ``rank.py`` re-imports the private helpers so its
-``imported_by`` signal is byte-for-byte unchanged.
+forward/reverse edge map (plus the re-export forwarding map). ``rank.py``
+re-imports the private helpers so its ``imported_by`` signal is byte-for-byte
+unchanged — re-export tracking is additive and does not touch
+:func:`_referenced_paths`.
 """
 
 from __future__ import annotations
@@ -27,6 +31,18 @@ from codegraft.models.repo import RepoScan
 _JS_IMPORT_RE = re.compile(r"""(?:from|import|require)\s*\(?\s*['"]([^'"\n]+)['"]""")
 _PY_FROM_RE = re.compile(r"^\s*from\s+([.\w]+)\s+import\s+(.+)$", re.MULTILINE)
 _PY_IMPORT_RE = re.compile(r"^\s*import\s+([.\w][.\w\s,]*)", re.MULTILINE)
+
+# Barrel re-export extraction: a statement-leading `export ... from '<spec>'`
+# (`export * from`, `export { a } from`, `export type { T } from`, `export * as ns
+# from`). Anchored at line start (MULTILINE) so it doesn't match the word "export"
+# mid-line or inside `import ... from`. `[^\n'"]*` keeps the match on one logical
+# line and short of the specifier quote. These edges are *also* plain import edges
+# (the `from '...'` is caught by ``_JS_IMPORT_RE``); the re-export map additionally
+# records that the barrel **forwards** the target's symbols, so importers of the
+# barrel transitively depend on the target.
+_JS_REEXPORT_RE = re.compile(
+    r"""^\s*export\b[^\n'"]*\bfrom\s*['"]([^'"\n]+)['"]""", re.MULTILINE
+)
 
 _JS_EXTS = {"ts", "tsx", "js", "jsx", "mjs", "cjs"}
 # Extensions tried (in order) when resolving a JS/TS module specifier to a file.
@@ -137,6 +153,29 @@ def _referenced_paths(
     return refs
 
 
+def _reexported_paths(text: str, importer: str, all_paths: set[str]) -> set[str]:
+    """Repo-internal files *importer* **re-exports** via a barrel ``export … from``.
+
+    A subset of the edges :func:`_referenced_paths` already returns, narrowed to
+    forwarding re-exports — the transparent pass-throughs (e.g. an ``index.ts``
+    barrel) that make importers of *importer* effective dependents of the target.
+    JS/TS only: ``export … from`` is unambiguous re-export syntax, whereas Python
+    ``__init__`` forwarding (``from .x import *``) is fuzzier and left for later.
+    Resolution reuses the precise relative/alias specifier resolver, so unresolved
+    (bare-package) specifiers are dropped rather than basename-smeared.
+    """
+
+    ext = importer.rsplit(".", 1)[-1].lower() if "." in importer else ""
+    if ext not in _JS_EXTS:
+        return set()
+    refs: set[str] = set()
+    for spec in _JS_REEXPORT_RE.findall(text):
+        resolved = _resolve_specifier(spec, importer, all_paths)
+        if resolved and resolved != importer:
+            refs.add(resolved)
+    return refs
+
+
 def _read_head(abs_path: Path, max_lines: int) -> str | None:
     """Read the first *max_lines* lines of a file, or None if it can't be read."""
 
@@ -160,11 +199,16 @@ class ImportGraph:
     is the set of files that import *path* (the transpose). Both are derived from
     the same heuristic reference scan, so neither is a correctness oracle — see
     the module docstring for the known blind spots.
+
+    ``reexport_reverse[path]`` is the subset of ``reverse[path]`` that reaches
+    *path* through a barrel ``export … from`` (forwarding) rather than a plain
+    consuming import — it powers ``impact_of``'s barrel-transparent blast radius.
     """
 
     forward: dict[str, set[str]] = field(default_factory=dict)
     reverse: dict[str, set[str]] = field(default_factory=dict)
     by_basename: dict[str, list[str]] = field(default_factory=dict)
+    reexport_reverse: dict[str, set[str]] = field(default_factory=dict)
 
     def importers_of(self, path: str) -> set[str]:
         """Files that directly import *path* (empty set if none/unknown)."""
@@ -175,6 +219,11 @@ class ImportGraph:
         """Repo files that *path* directly imports (empty set if none/unknown)."""
 
         return self.forward.get(path, set())
+
+    def reexporters_of(self, path: str) -> set[str]:
+        """Barrel files that re-export *path* via ``export … from`` (forwarding)."""
+
+        return self.reexport_reverse.get(path, set())
 
 
 def build_import_graph(scan: RepoScan, root: Path, config: Config) -> ImportGraph:
@@ -191,12 +240,17 @@ def build_import_graph(scan: RepoScan, root: Path, config: Config) -> ImportGrap
     all_paths, by_basename = _build_path_index(scan.files)
     forward: dict[str, set[str]] = {}
     reverse: dict[str, set[str]] = {}
+    reexport_reverse: dict[str, set[str]] = {}
     max_lines = config.repo.max_file_lines
 
     for f in scan.files:
         text = _read_head(root / f.path, max_lines)
         if text is None:
             continue
+        # Re-export edges are a subset of import edges; recording them is one extra
+        # bounded regex pass over the same head text already read.
+        for ref in _reexported_paths(text, f.path, all_paths):
+            reexport_reverse.setdefault(ref, set()).add(f.path)
         refs = _referenced_paths(text, f.path, all_paths, by_basename)
         if not refs:
             continue
@@ -204,4 +258,9 @@ def build_import_graph(scan: RepoScan, root: Path, config: Config) -> ImportGrap
         for ref in refs:
             reverse.setdefault(ref, set()).add(f.path)
 
-    return ImportGraph(forward=forward, reverse=reverse, by_basename=by_basename)
+    return ImportGraph(
+        forward=forward,
+        reverse=reverse,
+        by_basename=by_basename,
+        reexport_reverse=reexport_reverse,
+    )

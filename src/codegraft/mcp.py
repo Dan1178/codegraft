@@ -69,8 +69,11 @@ def impact_of_payload(
     """Reverse-dependency lookup for *target* — the files that import it.
 
     Minimal JSON: the resolved path, its importers, and a ``resolution`` trust
-    flag. ``resolved`` is ``null`` and ``ambiguous`` is populated when the target
-    matched zero or several files, so the caller can disambiguate.
+    flag. ``via_reexport`` (when present) lists consumers that reach the target
+    only through a barrel ``export … from`` — effectively-direct dependents a
+    plain importer scan would hide. ``resolved`` is ``null`` and ``ambiguous`` is
+    populated when the target matched zero or several files, so the caller can
+    disambiguate.
     """
 
     root = Path(repo)
@@ -84,6 +87,8 @@ def impact_of_payload(
         "imported_by": result.imported_by,
         "resolution": result.resolution,
     }
+    if result.via_reexport:
+        payload["via_reexport"] = result.via_reexport
     if transitive:
         payload["transitive"] = result.transitive
     if result.ambiguous:
@@ -196,8 +201,10 @@ def build_server() -> Any:
         symbol or a widely-imported module, not when you just need to list call sites —
         that's grep.) A natural follow-up to `select_context` on a file you intend to
         change. Deterministic, free, no LLM. Resolution is heuristic (misses dynamic
-        imports / re-exports / ambiguous basenames), so use it as blast-radius triage,
-        not a guarantee. `target` is a repo-relative path or a bare filename; set
+        imports / ambiguous basenames), so use it as blast-radius triage, not a
+        guarantee — but it does follow JS/TS barrel re-exports (`export … from`),
+        returning consumers that reach `target` only through a barrel in a separate
+        `via_reexport` list. `target` is a repo-relative path or a bare filename; set
         `transitive=True` for the full reverse closure. Single-shot and bounded — not a
         background indexer; skip it for a file you already know is a leaf."""
 

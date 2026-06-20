@@ -152,6 +152,91 @@ def test_impact_of_transitive_closure(tmp_path: Path) -> None:
     assert result.transitive == ["app/top.py"]       # one hop further
 
 
+def _barrel_repo(root: Path) -> None:
+    """A schema module re-exported by an ``index.ts`` barrel, consumed two ways:
+    one file imports the module directly, another imports it through the barrel."""
+
+    write(root, "package.json", '{"dependencies": {"react": "*"}}\n')
+    write(root, "src/db/schema/recipes.ts", "export const recipes = {};\n")
+    # The barrel forwards the module's symbols (also a plain import edge).
+    write(root, "src/db/schema/index.ts", "export * from './recipes';\n")
+    # A literal direct importer of the module.
+    write(
+        root,
+        "src/db/schema/junctions.ts",
+        "import { recipes } from './recipes';\nexport const j = recipes;\n",
+    )
+    # A consumer that only ever names the barrel — the case a plain importer scan hides.
+    write(
+        root,
+        "src/features/Screen.tsx",
+        "import { recipes } from '@/db/schema';\nexport function Screen() { return recipes; }\n",
+    )
+
+
+def test_impact_of_follows_barrel_reexport(tmp_path: Path) -> None:
+    """A consumer importing the barrel (not the module) surfaces in via_reexport,
+    while literal importers stay in imported_by — the two buckets don't overlap."""
+
+    _barrel_repo(tmp_path)
+    scan, config = _scan(tmp_path)
+
+    result = impact_of("src/db/schema/recipes.ts", scan, tmp_path, config)
+
+    assert result.imported_by == [
+        "src/db/schema/index.ts",      # the barrel re-exports it (also an import edge)
+        "src/db/schema/junctions.ts",  # literal `import … from './recipes'`
+    ]
+    # The screen reaches `recipes` only through the barrel — newly surfaced.
+    assert result.via_reexport == ["src/features/Screen.tsx"]
+    assert result.resolution == "heuristic"
+
+
+def test_impact_of_via_reexport_disjoint_from_transitive(tmp_path: Path) -> None:
+    """A barrel-transparent consumer is reported once, in via_reexport — not
+    double-counted in the deeper transitive closure."""
+
+    _barrel_repo(tmp_path)
+    scan, config = _scan(tmp_path)
+
+    result = impact_of("src/db/schema/recipes.ts", scan, tmp_path, config, transitive=True)
+
+    assert result.via_reexport == ["src/features/Screen.tsx"]
+    assert result.transitive == []  # the screen is in via_reexport, not here
+
+
+def test_impact_of_reexport_chain(tmp_path: Path) -> None:
+    """Re-export chains (a barrel re-exporting a barrel) are followed: both the
+    intermediate barrel and the eventual consumer are effective dependents."""
+
+    write(tmp_path, "package.json", '{"dependencies": {"react": "*"}}\n')
+    write(tmp_path, "src/core/thing.ts", "export const thing = 1;\n")
+    write(tmp_path, "src/core/index.ts", "export * from './thing';\n")     # B re-exports thing
+    write(tmp_path, "src/index.ts", "export * from './core';\n")          # C re-exports B
+    write(tmp_path, "src/app.tsx", "import { thing } from '@/index';\nexport const a = thing;\n")
+    scan, config = _scan(tmp_path)
+
+    result = impact_of("src/core/thing.ts", scan, tmp_path, config)
+
+    assert result.imported_by == ["src/core/index.ts"]           # literal re-exporter
+    assert result.via_reexport == ["src/app.tsx", "src/index.ts"]  # consumer + intermediate barrel
+
+
+def test_impact_of_no_reexport_leaves_via_empty(tmp_path: Path) -> None:
+    """Plain (non-barrel) imports never populate via_reexport — Python re-export
+    forwarding is intentionally out of scope, so its via list stays empty."""
+
+    write(tmp_path, "pyproject.toml", "[project]\n")
+    write(tmp_path, "app/shared.py", "def helper():\n    return 1\n")
+    write(tmp_path, "app/one.py", "from app.shared import helper\n")
+    scan, config = _scan(tmp_path)
+
+    result = impact_of("app/shared.py", scan, tmp_path, config)
+
+    assert result.imported_by == ["app/one.py"]
+    assert result.via_reexport == []
+
+
 def test_resolve_target_path_suffix(tmp_path: Path) -> None:
     """A path suffix resolves even when the repo is rooted elsewhere."""
 
