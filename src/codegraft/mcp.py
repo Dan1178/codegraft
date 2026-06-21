@@ -28,14 +28,45 @@ from codegraft.repo.symbols import find_symbol
 
 
 def select_context_payload(
-    request: str, repo: str = ".", subdir: str | None = None
+    request: str,
+    repo: str = ".",
+    subdir: str | None = None,
+    *,
+    max_files: int | None = None,
+    max_snippet_lines: int | None = None,
+    include_snippets: bool = True,
 ) -> dict[str, Any]:
-    """Deterministic context bundle for *request* against the repo at *repo*."""
+    """Deterministic context bundle for *request* against the repo at *repo*.
+
+    Optional caps keep the payload small enough to consume inline instead of
+    spilling to a file:
+
+    - *max_files* — cap the ranked list (and thus snippet candidates) to the top
+      N, overriding ``analysis.max_ranked_files``.
+    - *max_snippet_lines* — cap lines per snippet, overriding
+      ``analysis.max_snippet_lines_per_file``.
+    - *include_snippets* — when ``False``, omit the (bulky) ``snippets`` array
+      entirely and return just the ranked paths + score breakdown.
+
+    The caps feed the ranking/snippet config, so ``token_estimate`` stays
+    consistent with what the bundle actually contains.
+    """
 
     root = Path(repo)
-    analysis = analyze_repo(request, root, Config.load(root), subdir=subdir)
+    config = Config.load(root)
+    if max_files is not None:
+        config.analysis.max_ranked_files = max(1, max_files)
+    if max_snippet_lines is not None:
+        config.analysis.max_snippet_lines_per_file = max(1, max_snippet_lines)
+
+    analysis = analyze_repo(request, root, config, subdir=subdir)
+    # When snippets are suppressed, drop them before estimating so the savings
+    # figure reflects the slimmer bundle actually returned.
+    if not include_snippets:
+        analysis.snippets = []
     est = analysis.token_estimate()
-    return {
+
+    payload: dict[str, Any] = {
         "repo_root": analysis.scan.root,
         "ranking_signal": analysis.ranking_signal,
         "summary": {
@@ -50,10 +81,6 @@ def select_context_payload(
             {"path": r.path, "score": round(r.score, 1), "signals": r.signals}
             for r in analysis.ranked
         ],
-        "snippets": [
-            {"path": s.path, "content": s.content, "truncated": s.truncated}
-            for s in analysis.snippets
-        ],
         "token_estimate": {
             "bundle_tokens": est.bundle_tokens,
             "baseline_tokens": est.baseline_tokens,
@@ -61,6 +88,14 @@ def select_context_payload(
             "saved_pct": round(est.saved_pct, 1),
         },
     }
+    if include_snippets:
+        payload["snippets"] = [
+            {"path": s.path, "content": s.content, "truncated": s.truncated}
+            for s in analysis.snippets
+        ]
+    else:
+        payload["snippets_omitted"] = True
+    return payload
 
 
 def impact_of_payload(
@@ -177,7 +212,12 @@ def build_server() -> Any:
 
     @server.tool()
     def select_context(
-        request: str, repo: str = ".", subdir: str | None = None
+        request: str,
+        repo: str = ".",
+        subdir: str | None = None,
+        max_files: int | None = None,
+        max_snippet_lines: int | None = None,
+        include_snippets: bool = True,
     ) -> dict[str, Any]:
         """Call this FIRST when asked to plan or implement a feature, fix, or change
         in a repository — before manually grepping or reading files. Returns the most
@@ -185,9 +225,21 @@ def build_server() -> Any:
         the request, so you start from the right context instead of exploring blind.
         Deterministic: no LLM call, no API key, no per-request cost. `repo` is a local
         path (prefer an absolute path); `subdir` scopes a large repo. Skip only for
-        trivial single-file changes you can already locate."""
+        trivial single-file changes you can already locate.
 
-        return select_context_payload(request, repo, subdir)
+        The full bundle can be large. When the ranked paths alone are enough, pass
+        `include_snippets=False` for a compact ranked-only payload; otherwise keep it
+        inline-sized with `max_files` (top-N ranked files + snippet candidates) and/or
+        `max_snippet_lines` (per-file snippet cap). Omit all three for the full bundle."""
+
+        return select_context_payload(
+            request,
+            repo,
+            subdir,
+            max_files=max_files,
+            max_snippet_lines=max_snippet_lines,
+            include_snippets=include_snippets,
+        )
 
     @server.tool()
     def impact_of(

@@ -111,6 +111,12 @@ def inspect(
     snippets: bool = typer.Option(
         False, "--snippets", help="Also print the extracted context snippets."
     ),
+    max_files: Optional[int] = typer.Option(
+        None, "--max-files", help="Cap ranked files (and snippet candidates) to top N."
+    ),
+    max_snippet_lines: Optional[int] = typer.Option(
+        None, "--max-snippet-lines", help="Cap lines per extracted snippet."
+    ),
 ) -> None:
     """Preview what codegraft sees and ranks for a request (no model call).
 
@@ -118,6 +124,8 @@ def inspect(
     deterministically-ranked files with their score breakdown, and the bounded
     context snippets that would be sent to a provider. Pair with --request-file
     to preview ranking for a long-form request before spending an API call.
+    The --max-files / --max-snippet-lines caps mirror the select_context MCP
+    knobs, so you can preview a slimmer bundle.
     """
 
     from rich.table import Table
@@ -127,6 +135,10 @@ def inspect(
     try:
         request_text = _read_request(request, request_file, required=False)
         config = Config.load(repo)
+        if max_files is not None:
+            config.analysis.max_ranked_files = max(1, max_files)
+        if max_snippet_lines is not None:
+            config.analysis.max_snippet_lines_per_file = max(1, max_snippet_lines)
         analysis = analyze_repo(request_text or "", repo, config, subdir=subdir)
     except CodegraftError as exc:
         err_console.print(f"[red]error:[/red] {exc}")
