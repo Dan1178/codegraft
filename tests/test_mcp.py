@@ -43,6 +43,42 @@ def test_select_context_payload_shape(tmp_path: Path) -> None:
     assert payload["token_estimate"]["saved_tokens"] >= 0
 
 
+def test_select_context_include_snippets_false_omits_snippets(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    payload = select_context_payload(
+        "add role-based access to admin routes",
+        str(tmp_path),
+        include_snippets=False,
+    )
+
+    # Ranked paths survive; the bulky snippet array is gone.
+    assert payload["ranked_files"]
+    assert "snippets" not in payload
+    assert payload["snippets_omitted"] is True
+
+
+def test_select_context_max_files_caps_ranked_and_snippets(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    full = select_context_payload("admin role access", str(tmp_path))
+    capped = select_context_payload("admin role access", str(tmp_path), max_files=1)
+
+    assert len(capped["ranked_files"]) == 1
+    assert len(capped["ranked_files"]) <= len(full["ranked_files"])
+    # Snippets only come from ranked files, so they are capped too.
+    assert len(capped["snippets"]) <= 1
+
+
+def test_select_context_max_snippet_lines_shrinks_snippets(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    capped = select_context_payload(
+        "admin role access", str(tmp_path), max_snippet_lines=2
+    )
+    for snip in capped["snippets"]:
+        # Rendered lines (gap markers aside) must not exceed the cap.
+        body_lines = [ln for ln in snip["content"].splitlines() if not ln.strip().startswith("...")]
+        assert len(body_lines) <= 2
+
+
 def test_select_context_is_json_serializable(tmp_path: Path) -> None:
     import json
 
