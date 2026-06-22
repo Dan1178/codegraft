@@ -147,7 +147,7 @@ def render_markdown(plan: ImplementationPlan) -> str:
         f"- Ranked file count: {m.ranked_file_count}",
         f"- Reviewed file count: {m.reviewed_file_count}",
         f"- Estimated context tokens: {m.context_tokens:,}",
-        f"- Estimated tokens saved: {m.tokens_saved:,} (vs sending all candidate files)",
+        f"- Estimated tokens saved: {m.tokens_saved:,} (vs reading the selected files in full)",
     ]
     parts.append(_section("Generation Metadata", "\n".join(meta_lines)))
 

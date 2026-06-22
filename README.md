@@ -65,7 +65,7 @@ breakdown, plus an estimate of the context it *avoids* sending:
 
 ```
 Repo: /path/to/codegraft
-Discovery: git ls-files  Kept: 57  Skipped: 0  Mode: normal
+Discovery: git ls-files  Kept: 77  Skipped: 0  Mode: normal
 Primary: Python   Frameworks: Pydantic
 Ranked files for: add an openai provider
 ┏━━━━┳━━━━━━━┳────────────────────────────────────┳──────────────────────────┓
@@ -73,9 +73,14 @@ Ranked files for: add an openai provider
 ┃  1 ┃  13.6 ┃ src/codegraft/providers/anthropic… ┃ filename=+6.0 symbol=+4… ┃
 ┃  4 ┃   8.8 ┃ src/codegraft/planning/service.py  ┃ content=+4.8 symbol=+4.0 ┃
 ┃  9 ┃   5.4 ┃ src/codegraft/config.py            ┃ content=+4.4 symbol=+4.0 ┃
-Context bundle: 12 snippets, 38304 chars (budget 50000)
-Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 candidate files — ~46,624 saved (83%)
+Context bundle: 12 snippets, 43960 chars (budget 50000)
+Est. tokens (rough): ~10,990 tokens sent vs ~33,923 to read the 12 selected files in full — ~22,933 saved (68%)
 ```
+
+The baseline is the **selected files read in full**, not the whole repo — the
+realistic thing an agent would otherwise open. Comparing against the entire
+codebase would inflate the number; no agent reads unrelated files to implement
+one feature.
 
 - A long-form request: [examples/demo_requests/add-rbac.md](examples/demo_requests/add-rbac.md)
 - A rendered plan: [examples/sample_plans/add-rbac.md](examples/sample_plans/add-rbac.md)

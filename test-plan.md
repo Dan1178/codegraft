@@ -75,7 +75,7 @@ Ranking signal: add an openai provider (full request ...)        ← (3) only if
 ┃  # ┃ Score ┃ Path                      ┃ Signals             ┃ ← (4)
 ┃  1 ┃  17.3 ┃ src/codegraft/models/plan ┃ filename=+6.0 ...   ┃
 Context bundle: 12 snippets, 32194 chars (budget 50000)          ← (5)
-Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 ... 83%   ← (6)
+Est. tokens (rough): ~10,990 sent vs ~33,923 to read the 12 selected ... 68%  ← (6)
 ```
 
 1. **Discovery line.** `Kept` = files that survived ignore+safety filtering and
@@ -97,8 +97,9 @@ Est. tokens (rough): ~9,576 sent vs ~56,200 for all 57 ... 83%   ← (6)
    from. Add `--snippets` to print the actual extracted slices (line-numbered;
    `...` marks skipped lines; a file tagged `truncated` hit the per-file line cap).
 6. **Est. tokens (rough).** A ~4-chars/token *estimate* (not exact — see §2c) of
-   what the bundle costs vs. dumping all candidate files into context, with the
-   percentage saved. Quantifies the selective-context value in one line.
+   what the bundle costs vs. reading the *selected* files in full (the realistic
+   alternative an agent would open — not the whole repo), with the percentage
+   saved. Quantifies the selective-context value in one line.
 
 #### Signal glossary (the ranking "why")
 
@@ -199,11 +200,13 @@ The plan text is a judgment call, but several quality properties are
 ### 2c. Cost/value
 
 - **Tokens saved** (implemented): a rough ~4-chars/token estimate of the bundle
-  vs. the whole candidate set — shown in `inspect` and in the plan's Generation
-  Metadata. It is deliberately an *estimate*, not `tiktoken` (OpenAI's tokenizer,
-  wrong for Claude) and not the Anthropic `count_tokens` endpoint (would cost a
-  call). Read it as order-of-magnitude, not a bill. Verified end-to-end:
-  `inspect "add an openai provider" --repo .` reports ~46k tokens (~83%) saved.
+  vs. reading the *selected* files in full (the realistic alternative an agent
+  would open — not the whole repo) — shown in `inspect` and in the plan's
+  Generation Metadata. It is deliberately an *estimate*, not `tiktoken` (OpenAI's
+  tokenizer, wrong for Claude) and not the Anthropic `count_tokens` endpoint
+  (would cost a call). Read it as order-of-magnitude, not a bill. Verified
+  end-to-end: `inspect "add an openai provider" --repo .` reports ~23k tokens
+  (~68%) saved.
 
 ---
 

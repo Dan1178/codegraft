@@ -6,6 +6,15 @@ Anthropic ``count_tokens`` endpoint (which would cost a network call / key). The
 numbers are presented to the user as estimates, and that's all they need to be:
 the point is to show the *order of magnitude* of context that selective snippet
 extraction avoids sending, not an exact bill.
+
+**What the baseline is, and is not.** The honest alternative to codegraft's
+bundle is *not* "send the entire repository" — no agent reads unrelated files to
+implement one feature, so comparing against the whole codebase would inflate the
+savings. The baseline is the set of files codegraft actually surfaced as
+relevant, read **in full**: the realistic thing an agent would otherwise open.
+The saved figure therefore measures the win from *snippet extraction* (bounded
+slices of the right files) over reading those same files whole — a claim that
+holds up to scrutiny.
 """
 
 from __future__ import annotations
@@ -25,11 +34,11 @@ def estimate_tokens(chars: int) -> int:
 
 @dataclass(frozen=True)
 class TokenEstimate:
-    """Estimated cost of the context bundle vs. sending all candidate files."""
+    """Estimated cost of the snippet bundle vs. reading the selected files whole."""
 
-    candidate_files: int
-    baseline_chars: int   # all candidate files, in full
-    bundle_chars: int     # what codegraft actually sends
+    selected_files: int   # files codegraft surfaced (the snippet sources)
+    baseline_chars: int   # those files, read in full
+    bundle_chars: int     # the bounded snippets codegraft actually sends
     baseline_tokens: int
     bundle_tokens: int
     saved_tokens: int
@@ -40,19 +49,20 @@ class TokenEstimate:
 
         return (
             f"~{self.bundle_tokens:,} tokens sent vs ~{self.baseline_tokens:,} "
-            f"for all {self.candidate_files} candidate files "
+            f"to read the {self.selected_files} selected files in full "
             f"— ~{self.saved_tokens:,} saved ({self.saved_pct:.0f}%)"
         )
 
 
 def estimate_savings(
-    baseline_chars: int, bundle_chars: int, candidate_files: int
+    baseline_chars: int, bundle_chars: int, selected_files: int
 ) -> TokenEstimate:
-    """Compute the token estimate for a bundle vs. the full candidate set.
+    """Compute the token estimate for a bundle vs. reading the selected files whole.
 
-    `baseline_chars` is the total size of every candidate file (the naive
-    "dump the repo" alternative); `bundle_chars` is the size of the snippets
-    codegraft actually selected.
+    `baseline_chars` is the total size of the files codegraft surfaced as
+    relevant, read in full (the realistic alternative an agent would otherwise
+    open); `bundle_chars` is the size of the bounded snippets codegraft selected
+    from those same files.
     """
 
     baseline_tokens = estimate_tokens(baseline_chars)
@@ -60,7 +70,7 @@ def estimate_savings(
     saved_tokens = max(0, baseline_tokens - bundle_tokens)
     saved_pct = (saved_tokens / baseline_tokens * 100) if baseline_tokens else 0.0
     return TokenEstimate(
-        candidate_files=candidate_files,
+        selected_files=selected_files,
         baseline_chars=baseline_chars,
         bundle_chars=bundle_chars,
         baseline_tokens=baseline_tokens,

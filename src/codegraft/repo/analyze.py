@@ -37,13 +37,23 @@ class RepoAnalysis:
         return sum(s.char_count for s in self.snippets)
 
     def token_estimate(self) -> TokenEstimate:
-        """Estimate tokens sent vs. sending every candidate file in full."""
+        """Estimate tokens sent vs. reading the *selected* files in full.
 
-        baseline_chars = sum(f.size_bytes for f in self.scan.files)
+        The baseline is only the files codegraft actually surfaced as
+        evidence (the snippet sources), read whole — not the entire repo. An
+        agent implementing one feature would open those files, not unrelated
+        ones, so this is the realistic alternative the bundle is measured
+        against. The figure thus reflects the snippet-extraction win, not an
+        inflated whole-repo comparison.
+        """
+
+        selected_paths = {s.path for s in self.snippets}
+        sizes = {f.path: f.size_bytes for f in self.scan.files}
+        baseline_chars = sum(sizes.get(p, 0) for p in selected_paths)
         return estimate_savings(
             baseline_chars=baseline_chars,
             bundle_chars=self.context_chars,
-            candidate_files=self.scan.file_count,
+            selected_files=len(selected_paths),
         )
 
 
