@@ -60,11 +60,12 @@ def select_context_payload(
         config.analysis.max_snippet_lines_per_file = max(1, max_snippet_lines)
 
     analysis = analyze_repo(request, root, config, subdir=subdir)
-    # When snippets are suppressed, drop them before estimating so the savings
-    # figure reflects the slimmer bundle actually returned.
+    # Estimate before optionally dropping snippets: the figure describes the
+    # value of the selection (bounded snippets vs. reading the selected files
+    # whole), which holds whether or not the caller asks us to ship the bodies.
+    est = analysis.token_estimate()
     if not include_snippets:
         analysis.snippets = []
-    est = analysis.token_estimate()
 
     payload: dict[str, Any] = {
         "repo_root": analysis.scan.root,

@@ -26,7 +26,7 @@ repo path + feature request
   │  rank (rank.py)     two-stage explainable score per file              │
   │    └─ utils/text.ranking_signal()  focuses long requests             │
   │  snippets (snippets.py)  header + keyword windows, under budget       │
-  │  utils/tokens.py    estimated tokens saved vs. dumping the repo       │
+  │  utils/tokens.py    est. tokens saved vs. reading selected files whole │
   └───────────────────────────────────────────────────────────────────────┘
         │
         ▼  PlanningRequest (providers/base.py) — the evidence bundle

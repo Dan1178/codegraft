@@ -95,15 +95,19 @@ Quantify the selective-context thesis: how many tokens codegraft *avoided*
 sending by shipping a bounded bundle instead of the whole candidate set.
 - [x] `utils/tokens.py`: `estimate_tokens(chars)` (~4 chars/token heuristic,
       labelled an estimate — NOT tiktoken; `TokenEstimate` + `estimate_savings`)
-- [x] `RepoAnalysis.token_estimate()`: baseline = Σ candidate-file `size_bytes`
-      (the naive "dump the repo" alternative) vs bundle = `context_chars`;
-      reports `saved_tokens` + `saved_pct`, clamped ≥ 0
+- [x] `RepoAnalysis.token_estimate()`: baseline = Σ `size_bytes` of the
+      **selected** files (the snippet sources, read in full — the realistic
+      alternative an agent would open, *not* the whole repo) vs bundle =
+      `context_chars`; reports `saved_tokens` + `saved_pct`, clamped ≥ 0
 - [x] Surfaced in `inspect` (one line) and in the plan's Generation Metadata
       (two new fields on `GenerationMetadata`, stamped by the service; renderer
       prints them; snapshot regenerated). `--json` exposure lands with Phase 6.
 - [x] Tests (`tests/test_tokens.py`) — estimator, savings math, clamping, empty
       repo, end-to-end on a fixture. 67 passing, 1 opt-in skipped.
-- Live check: "add an openai provider" on this repo → ~46k tokens (83%) saved.
+- Live check: "add an openai provider" on this repo → ~11k sent vs ~34k to read
+  the 12 selected files in full → ~23k (68%) saved. (Earlier this read ~46k/83%
+  against the *whole repo* — an inflated baseline; corrected to the realistic
+  "read the surfaced files" comparison.)
 
 ### Phase 6 — OpenAI provider & portfolio polish ✅
 - [x] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`),
