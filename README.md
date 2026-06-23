@@ -1,5 +1,9 @@
 # codegraft
 
+[![CI](https://github.com/Dan1178/codegraft/actions/workflows/ci.yml/badge.svg)](https://github.com/Dan1178/codegraft/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+
 > Turn a feature request plus a real local repository into a structured,
 > evidence-backed implementation plan for coding agents.
 

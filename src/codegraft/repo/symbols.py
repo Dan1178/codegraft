@@ -17,9 +17,9 @@ target: "good enough to avoid a full-file read."
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
 
 from codegraft.config import Config
 from codegraft.models.repo import RepoScan

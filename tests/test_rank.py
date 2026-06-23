@@ -6,9 +6,9 @@ from pathlib import Path
 
 from codegraft.config import Config
 from codegraft.repo.analyze import analyze_repo
+from codegraft.repo.discover import discover_repo
 from codegraft.repo.rank import rank_files
 from codegraft.repo.summarize import summarize
-from codegraft.repo.discover import discover_repo
 from tests.conftest import write
 
 

@@ -21,9 +21,9 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from codegraft.config import Config
+from codegraft.repo import detect
 from codegraft.repo.discover import discover_repo
 from codegraft.repo.symbols import _iter_symbol_defs, _read_lines, symbol_span
-from codegraft.repo import detect
 
 
 @dataclass

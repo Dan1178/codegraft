@@ -19,7 +19,6 @@ from codegraft.providers.openai_provider import OpenAIProvider
 from codegraft.providers.prompt import build_planning_prompt
 from tests.conftest import write
 
-
 # --- Fakes -----------------------------------------------------------------
 
 class _FakeMessages:

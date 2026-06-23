@@ -33,8 +33,8 @@ from pathlib import Path
 
 from codegraft.config import Config
 from codegraft.repo.discover import discover_repo
-from codegraft.repo.graph import _is_test_path, affected_tests, reverse_closure
 from codegraft.repo.git_scan import commit_changed_files, commit_subject
+from codegraft.repo.graph import _is_test_path, affected_tests, reverse_closure
 from codegraft.repo.imports import ImportGraph, build_import_graph
 from codegraft.repo.summarize import summarize
 

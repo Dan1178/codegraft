@@ -118,8 +118,13 @@ repo/symbols.py  → find_symbol (snippet extractor at symbol granularity)
 
 No embeddings/vector stores/RAG. No tree-sitter / full AST across languages. No
 git-diff validation against the plan. No multi-agent planner+reviewer by default.
-No SQLite project memory. No remote repo cloning. No web UI, MCP server, or IDE
-plugin. No "let codegraft edit code / run Claude Code for you."
+No SQLite project memory. No remote repo cloning. No web UI or IDE plugin. No
+"let codegraft edit code / run Claude Code for you."
+
+(The MCP server was originally out of scope but shipped in Phase 7 as a thin
+read-only adapter over the existing `analyze_repo` engine — same core, no new
+capability surface. It stays within the "read-side, no editing/execution"
+boundary above.)
 
 If an idea doesn't make the **single-run local planning pipeline** noticeably
 better, it goes to V2.

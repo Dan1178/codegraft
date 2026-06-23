@@ -102,7 +102,7 @@ class Config(BaseModel):
     secrets: Secrets = Field(default_factory=Secrets)
 
     @classmethod
-    def load(cls, repo_root: Path | None = None) -> "Config":
+    def load(cls, repo_root: Path | None = None) -> Config:
         """Load config from ``codegraft.toml`` in *repo_root* (if present) plus env.
 
         Missing file is fine: every field has a default, so an unconfigured repo
