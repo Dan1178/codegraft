@@ -17,8 +17,7 @@ from codegraft.evaluation_graph import (
     run_impact_eval,
     run_tests_eval,
 )
-from tests.conftest import init_git_repo, git, requires_git, write
-
+from tests.conftest import git, init_git_repo, requires_git, write
 
 # --- Pure aggregation ---
 

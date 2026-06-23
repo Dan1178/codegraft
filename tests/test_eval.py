@@ -17,7 +17,6 @@ from codegraft.repo.git_scan import (
 )
 from tests.conftest import git, init_git_repo, requires_git, write
 
-
 # --- Pure scorer -----------------------------------------------------------
 
 def test_score_case_recall_and_rank() -> None:

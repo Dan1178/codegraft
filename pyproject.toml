@@ -25,7 +25,7 @@ anthropic = ["anthropic>=0.40"]
 openai = ["openai>=1.40"]
 mcp = ["mcp>=1.2"]
 all = ["anthropic>=0.40", "openai>=1.40", "mcp>=1.2"]
-dev = ["pytest>=8.2", "pytest-cov>=5.0"]
+dev = ["pytest>=8.2", "pytest-cov>=5.0", "ruff>=0.6"]
 
 [project.scripts]
 codegraft = "codegraft.cli:app"
@@ -33,6 +33,27 @@ codegraft-mcp = "codegraft.mcp:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/codegraft"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+# A pragmatic, non-fussy default set: pyflakes (F), pycodestyle (E/W),
+# isort (I), pyupgrade (UP), flake8-bugbear (B).
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",   # line length is advisory here, not a CI gate
+    "B008",   # Typer's API *is* function-calls-in-defaults (typer.Option/Argument)
+    "UP042",  # StrEnum changes str() semantics; keep the explicit (str, Enum) base
+]
+
+[tool.ruff.lint.per-file-ignores]
+# cli.py reconfigures stdout/stderr to UTF-8 *before* importing modules that may
+# emit (E402), and re-raises typer.Exit after printing a clean message at the CLI
+# boundary, where exception chaining only adds noise (B904).
+"src/codegraft/cli.py" = ["E402", "B904"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

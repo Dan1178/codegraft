@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import typer
 from rich.console import Console
@@ -101,20 +100,20 @@ def inspect(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
-    request_file: Optional[Path] = typer.Option(
+    request_file: Path | None = typer.Option(
         None, "--request-file", help="Read the feature request from a file.",
         exists=True, dir_okay=False, resolve_path=True,
     ),
-    subdir: Optional[str] = typer.Option(
+    subdir: str | None = typer.Option(
         None, "--subdir", help="Scope analysis to a repo-relative subdirectory."
     ),
     snippets: bool = typer.Option(
         False, "--snippets", help="Also print the extracted context snippets."
     ),
-    max_files: Optional[int] = typer.Option(
+    max_files: int | None = typer.Option(
         None, "--max-files", help="Cap ranked files (and snippet candidates) to top N."
     ),
-    max_snippet_lines: Optional[int] = typer.Option(
+    max_snippet_lines: int | None = typer.Option(
         None, "--max-snippet-lines", help="Cap lines per extracted snippet."
     ),
 ) -> None:
@@ -310,7 +309,7 @@ def symbol(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
-    in_path: Optional[str] = typer.Option(
+    in_path: str | None = typer.Option(
         None, "--in", help="Restrict the search to one repo-relative file."
     ),
 ) -> None:
@@ -369,7 +368,7 @@ def affected_tests_cmd(
         Path("."), "--repo", help="Repository root to analyze.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
-    since: Optional[str] = typer.Option(
+    since: str | None = typer.Option(
         None, "--since", help="Derive the changed set from `git diff --name-only <ref>`."
     ),
 ) -> None:
@@ -431,17 +430,17 @@ def plan(
         Path("."), "--repo", help="Repository root to plan against.",
         file_okay=False, dir_okay=True, resolve_path=True,
     ),
-    request_file: Optional[Path] = typer.Option(
+    request_file: Path | None = typer.Option(
         None, "--request-file", help="Read the feature request from a file.",
         exists=True, dir_okay=False, resolve_path=True,
     ),
-    subdir: Optional[str] = typer.Option(
+    subdir: str | None = typer.Option(
         None, "--subdir", help="Scope analysis to a repo-relative subdirectory."
     ),
-    provider: Optional[str] = typer.Option(
+    provider: str | None = typer.Option(
         None, "--provider", help="Override provider (anthropic|openai)."
     ),
-    model: Optional[str] = typer.Option(None, "--model", help="Override model id."),
+    model: str | None = typer.Option(None, "--model", help="Override model id."),
     stub: bool = typer.Option(
         False, "--stub", help="Offline placeholder plan; no repo analysis, no API call."
     ),
@@ -510,7 +509,7 @@ def plan(
 
 @app.command("eval")
 def evaluate(
-    commits: Optional[list[str]] = typer.Argument(
+    commits: list[str] | None = typer.Argument(
         None, help="Commit SHAs to evaluate. Omit to use recent history."
     ),
     repo: Path = typer.Option(
@@ -601,7 +600,7 @@ def evaluate(
 
 @app.command("eval-impact")
 def evaluate_impact(
-    commits: Optional[list[str]] = typer.Argument(
+    commits: list[str] | None = typer.Argument(
         None, help="Commit SHAs to evaluate. Omit to use recent history."
     ),
     repo: Path = typer.Option(
@@ -701,7 +700,7 @@ def evaluate_symbol(
 
 @app.command("eval-tests")
 def evaluate_tests(
-    commits: Optional[list[str]] = typer.Argument(
+    commits: list[str] | None = typer.Argument(
         None, help="Commit SHAs to evaluate. Omit to use recent history."
     ),
     repo: Path = typer.Option(
@@ -944,8 +943,8 @@ def _changed_since(repo: Path, ref: str) -> list[str]:
 
 
 def _read_request(
-    request: Optional[str], request_file: Optional[Path], *, required: bool
-) -> Optional[str]:
+    request: str | None, request_file: Path | None, *, required: bool
+) -> str | None:
     """Resolve the feature request from an argument or a file.
 
     A file (when given) wins over the positional argument. Returns None when
