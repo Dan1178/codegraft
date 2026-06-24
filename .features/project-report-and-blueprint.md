@@ -4,11 +4,11 @@
 
 ### Executive Recommendation
 
-codegraft is worth building now, but only if you build the narrow, high-signal version of it: a **local-first brownfield implementation-planning CLI** for existing repositories. That is a real gap in the current tooling landscape. Repo-packers such as **Gitingest** and **Repomix** are optimized for turning repositories into prompt-friendly digests, not for turning a *feature request plus repository evidence* into a structured engineering plan. Context-heavy coding tools such as **Aider** and **Sourcegraph Cody** invest heavily in repository maps, search, and codebase context. **GitHub Spec Kit** is centered on more formal spec-driven workflows, while **Plandex** pushes toward large-task planning, execution, sandboxed diffs, and tree-sitter-backed large-project handling. The best portfolio wedge for you is therefore not “another full coding agent,” but “the tool that creates a practical, evidence-backed implementation plan for coding agents from a real local codebase.” citeturn8view8turn8view7turn8view9turn9view0turn18view0turn18view1turn18view2turn18view4
+codegraft is worth building now, but only if you build the narrow, high-signal version of it: a **local-first brownfield implementation-planning CLI** for existing repositories. That is a real gap in the current tooling landscape. Repo-packers such as **Gitingest** and **Repomix** are optimized for turning repositories into prompt-friendly digests, not for turning a *feature request plus repository evidence* into a structured engineering plan. Context-heavy coding tools such as **Aider** and **Sourcegraph Cody** invest heavily in repository maps, search, and codebase context. **GitHub Spec Kit** is centered on more formal spec-driven workflows, while **Plandex** pushes toward large-task planning, execution, sandboxed diffs, and tree-sitter-backed large-project handling. The best wedge for you is therefore not “another full coding agent,” but “the tool that creates a practical, evidence-backed implementation plan for coding agents from a real local codebase.” citeturn8view8turn8view7turn8view9turn9view0turn18view0turn18view1turn18view2turn18view4
 
 This also lines up well with how **Claude Code** itself is documented to work best: explore first, then plan, then code; provide specific context; and give the agent a way to verify its work. A tool that improves planning artifacts and handoff quality for Claude Code is not a gimmick; it is directly aligned with the workflow the downstream agent expects. citeturn19view0turn20view0turn20view1
 
-My judgment is that **Polished Portfolio V1 is feasible over a focused weekend**, but it is **not** feasible if you let it slide toward embeddings, tree-sitter project maps, git-diff validation, multi-agent orchestration, or collaboration features. Mature tools in this area already show that those bigger features quickly become their own projects: Aider talks explicitly about repository maps, Plandex talks about tree-sitter project maps and very large-context workflows, and Sourcegraph Cody relies on a search-driven context engine. So the correct move is a strict V1 split: **weekend core** first, **polish pass** second. citeturn8view9turn18view4turn9view0turn10view0
+My judgment is that **Polished V1 is feasible over a focused weekend**, but it is **not** feasible if you let it slide toward embeddings, tree-sitter project maps, git-diff validation, multi-agent orchestration, or collaboration features. Mature tools in this area already show that those bigger features quickly become their own projects: Aider talks explicitly about repository maps, Plandex talks about tree-sitter project maps and very large-context workflows, and Sourcegraph Cody relies on a search-driven context engine. So the correct move is a strict V1 split: **weekend core** first, **polish pass** second. citeturn8view9turn18view4turn9view0turn10view0
 
 Relative to your recipe app, I would treat codegraft as roughly **twice as hard** in the part that matters: not because it needs more screens or CRUD, but because the hard work shifts to **context engineering, output reliability, ranking quality, and plan usefulness**. If you stay disciplined, it is still a fast project; if you chase “AI platform” energy, it becomes a multi-week sink. That estimate is my judgment based on the scoped architecture below.
 
@@ -29,7 +29,7 @@ and produces:
 
 The core problem it solves is that coding agents work much better when they are handed **the right context, a bounded plan, and explicit verification criteria**. Claude Code’s own docs emphasize codebase exploration, planning before editing, narrow context, and explicit checks that the agent can run. codegraft exists to manufacture those planning artifacts automatically and consistently. citeturn19view0turn19view1turn20view0
 
-The intended user for V1 is **you first**: a solo engineer using coding agents across multiple personal repositories. The secondary audience is **employers and interviewers** for senior/backend/AI roles. That means the product should optimize for **clarity, explainability, architecture quality, and visible tradeoff decisions**, not just “it generated something once.”
+The intended user for V1 is **you first**: a solo engineer using coding agents across multiple personal repositories. That means the product should optimize for **clarity, explainability, architecture quality, and visible tradeoff decisions**, not just “it generated something once.”
 
 What makes codegraft more than a thin LLM wrapper is the **deterministic pipeline around the model**:
 
@@ -91,9 +91,9 @@ The cleanest V1 boundary is:
 - Hosted backend, accounts, team workspaces, or history sync.
 - Direct code editing or “run Claude Code for me” execution flows.
 
-Both Anthropic and OpenAI now support schema-constrained structured outputs, which means a typed internal plan object belongs in V1 rather than later. That one choice gives you better reliability, cleaner tests, and better architecture for interviews. citeturn8view5turn9view4
+Both Anthropic and OpenAI now support schema-constrained structured outputs, which means a typed internal plan object belongs in V1 rather than later. That one choice gives you better reliability, cleaner tests, and a cleaner architecture. citeturn8view5turn9view4
 
-If schedule pressure hits, the first scope cut I would make is **OpenAI as a shipping provider**, not the abstraction. Keep the abstraction, ship Anthropic-first, and add OpenAI after the portfolio-grade flow is already solid.
+If schedule pressure hits, the first scope cut I would make is **OpenAI as a shipping provider**, not the abstraction. Keep the abstraction, ship Anthropic-first, and add OpenAI after the core flow is already solid.
 
 ## Proposed architecture
 
@@ -190,7 +190,7 @@ codegraft/
     screenshots/
 ```
 
-That structure is interview-friendly because it makes the boundaries obvious: **repo analysis**, **provider adapters**, **planning service**, and **rendering** are distinct concerns.
+That structure makes the boundaries obvious: **repo analysis**, **provider adapters**, **planning service**, and **rendering** are distinct concerns.
 
 #### Core data flow
 
@@ -220,7 +220,7 @@ Markdown renderer + phase prompt renderer
 plans/<timestamp>-<slug>.md
 ```
 
-That flow should stay mostly deterministic until the actual planning call. That is one of the strongest architecture decisions you can defend in interviews.
+That flow should stay mostly deterministic until the actual planning call. That is one of the strongest architecture decisions in the design.
 
 #### Main modules
 
@@ -266,7 +266,7 @@ Useful flags:
 - `--dry-run`
 - `--debug-context`
 
-The `inspect` command is not fluff. It does double duty as a debugging surface for ranking quality and as a strong portfolio/demo feature.
+The `inspect` command is not fluff. It does double duty as a debugging surface for ranking quality and as a strong demo feature.
 
 #### Config structure
 
@@ -391,7 +391,7 @@ Return data matching the ImplementationPlan schema.
 </output_contract>
 ```
 
-Do **not** use a few-shot-heavy prompt in V1 unless you discover a real quality problem. Structured output plus a strong rubric is enough to ship a portfolio-grade first version.
+Do **not** use a few-shot-heavy prompt in V1 unless you discover a real quality problem. Structured output plus a strong rubric is enough to ship a strong first version.
 
 #### Output file structure
 
@@ -405,7 +405,7 @@ Write plans to the analyzed repository root:
     2026-06-11-add-org-rbac.context.md
 ```
 
-The Markdown file is the product. The JSON and context artifacts are there for debugging and portfolio transparency.
+The Markdown file is the product. The JSON and context artifacts are there for debugging and transparency.
 
 ### Markdown Plan Format
 
@@ -843,7 +843,7 @@ Render sample plans from fixtures. Check readability. Run renderer tests.
 **Rollback and scope-control notes**  
 Do not spend time on rich HTML output, PDFs, or docs-site generation.
 
-#### OpenAI provider and portfolio polish
+#### OpenAI provider and polish
 
 **Goal**  
 Add OpenAI parity, final debug surfaces, demo assets, and README polish.
@@ -857,7 +857,7 @@ OpenAI provider works behind the same `PlanProvider` interface. README clearly e
 **Suggested Claude Code prompt**
 
 ```text
-Polish codegraft for portfolio V1.
+Polish codegraft for V1.
 
 Requirements:
 - add an OpenAI provider using the same PlanProvider contract
@@ -874,7 +874,7 @@ Constraints:
 ```
 
 **Validation steps**  
-Generate one plan with each provider. Re-run full test suite. Review README with a “cold recruiter” eye.
+Generate one plan with each provider. Re-run full test suite. Review README with a “cold reader” eye.
 
 **Rollback and scope-control notes**  
 If time runs short, ship Anthropic-first and note OpenAI as next-in-line.
@@ -907,10 +907,10 @@ That order is deliberately **golden-path first**. You want a complete vertical s
 These are my estimates, not sourced facts:
 
 **Barebones MVP**  
-About **8–12 hours**. That version would include one provider, scanner, ranking, snippets, and Markdown output, but only minimal tests and minimal portfolio polish.
+About **8–12 hours**. That version would include one provider, scanner, ranking, snippets, and Markdown output, but only minimal tests and minimal polish.
 
-**Polished Portfolio V1**  
-About **16–24 hours**. This includes the `inspect` surface, strong README, demo artifacts, fixture repos, snapshot tests, and enough architecture quality to explain in interviews.
+**Polished V1**  
+About **16–24 hours**. This includes the `inspect` surface, strong README, demo artifacts, fixture repos, snapshot tests, and enough architecture quality to explain clearly.
 
 **Likely Claude Code usage relative to the recipe app**  
 Roughly **2x–3x the recipe app’s Claude usage**. If the recipe app took ~20% of your weekly limit, I would budget **40%–60%** for a polished codegraft V1. The reason is not UI complexity; it is repeated architecture iteration, test fixture work, and prompt/ranking tuning.
@@ -934,7 +934,7 @@ Yes, for a **focused** weekend. My practical recommendation would be:
 - **Day two:** Anthropic provider, Markdown output, tests, sample run
 - **Late polish block:** README, screenshots, OpenAI provider if time remains
 
-If your weekend time is fragmented, split it into **core V1** and **portfolio polish V1.1** instead of trying to cram both.
+If your weekend time is fragmented, split it into **core V1** and **polish V1.1** instead of trying to cram both.
 
 ## Risks, testing, and scope control
 
@@ -1033,7 +1033,7 @@ codegraft V1 is done when all of the following are true:
 - CLI tests pass.
 - README explains installation, usage, architecture, and limitations.
 - Screenshots or terminal captures exist.
-- You can explain the tradeoffs in an interview without hand-waving.
+- You can explain the tradeoffs clearly without hand-waving.
 
 ### Deep Scope Guardrails
 
@@ -1054,11 +1054,11 @@ These are the features I would explicitly refuse in V1, even if they are temptin
 
 If a new idea does not make the **single-run local planning pipeline** noticeably better, it goes to V2, not V1.
 
-## Portfolio positioning and naming
+## Positioning and README story
 
-### Portfolio Polish Plan
+### Polish Plan
 
-To make codegraft look impressive to employers, the README should tell a very clear story:
+The README should tell a very clear story:
 
 - the problem
 - the wedge
@@ -1105,13 +1105,7 @@ For the sample demo repository, use **one small backend-heavy repo** rather than
 - “Add role-based access control to admin routes.”
 - “Add soft-delete support and restore endpoints for recipes.”
 
-That kind of example reads well for senior/backend hiring.
-
-For resume bullets, here are three good options:
-
-- Built a local-first AI implementation-planning CLI that analyzes existing repositories, identifies impacted files, and generates phase-based engineering plans and coding-agent handoff prompts.
-- Designed a provider-agnostic planning pipeline using structured model outputs, Git-aware repository scanning, context-budgeting, and deterministic Markdown rendering across Anthropic and OpenAI backends.
-- Implemented evidence-backed context engineering for brownfield software changes, including relevant-file ranking, snippet extraction, risk analysis, and test-plan generation.
+That kind of example exercises real architectural reasoning, not just filename matching.
 
 For an architecture diagram, keep it simple:
 
@@ -1119,7 +1113,7 @@ For an architecture diagram, keep it simple:
 - annotate where logic is deterministic and where the LLM is used
 - call out privacy boundary: raw repo stays local, selected snippets only leave the machine
 
-In interviews, do **not** pitch it as “I made a CLI that calls Claude.” Pitch it as:
+Position it as more than “a CLI that calls Claude.” It is:
 
 - a **brownfield planning system**
 - with **deterministic context assembly**

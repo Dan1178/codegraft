@@ -1,6 +1,6 @@
 # Remaining to MVP
 
-Tracking what's left from the blueprint to reach **Polished Portfolio V1**.
+Tracking what's left from the blueprint to reach **Polished V1**.
 Source of truth for scope: `project-report-and-blueprint.md` + `CLAUDE.md`
 guardrails. Update checkboxes as work lands.
 
@@ -109,7 +109,7 @@ sending by shipping a bounded bundle instead of the whole candidate set.
   against the *whole repo* — an inflated baseline; corrected to the realistic
   "read the surfaced files" comparison.)
 
-### Phase 6 — OpenAI provider & portfolio polish ✅
+### Phase 6 — OpenAI provider & polish ✅
 - [x] OpenAI provider behind same `PlanProvider` contract (`providers/openai_provider.py`),
       reusing the identical prompt assembly; mocked tests mirroring Anthropic
 - [x] Raw plan JSON debug artifact: `plans/_debug/<stem>.plan.json` (when
@@ -175,7 +175,7 @@ sending by shipping a bounded bundle instead of the whole candidate set.
 - [x] Core repo-analysis, renderer snapshot, and CLI tests pass (73 + 1 opt-in)
 - [x] README explains install, usage, architecture, limitations
 - [~] Terminal captures embedded in README; image screenshots optional
-- [x] Tradeoffs explainable in an interview without hand-waving
+- [x] Tradeoffs explainable clearly without hand-waving
 - ⏳ One live `plan` run + human read of the output (needs the user's API key)
 
 ---
